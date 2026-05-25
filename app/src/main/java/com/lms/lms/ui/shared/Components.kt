@@ -25,6 +25,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
+
 // ── Gradient header banner ─────────────────────────────────────────────────────
 @Composable
 fun GradientHeader(
@@ -428,5 +433,77 @@ fun LmsSnackbarHost(hostState: SnackbarHostState, modifier: Modifier = Modifier)
             contentColor = Color.White,
             shape = RoundedCornerShape(12.dp)
         )
+    }
+}
+
+// ── Video Player ──────────────────────────────────────────────────────────────
+@Composable
+fun VideoPlayer(
+    videoUrl: String,
+    modifier: Modifier = Modifier,
+    autoPlay: Boolean = true,
+    onFullScreenClick: (() -> Unit)? = null,
+    onCloseClick: (() -> Unit)? = null
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val exoPlayer = remember {
+        ExoPlayer.Builder(context).build().apply {
+            val mediaItem = MediaItem.fromUri(videoUrl)
+            setMediaItem(mediaItem)
+            prepare()
+            playWhenReady = autoPlay
+        }
+    }
+
+    // Update video item if URL changes
+    LaunchedEffect(videoUrl) {
+        val mediaItem = MediaItem.fromUri(videoUrl)
+        exoPlayer.setMediaItem(mediaItem)
+        exoPlayer.prepare()
+        exoPlayer.playWhenReady = autoPlay
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            exoPlayer.release()
+        }
+    }
+
+    Box(modifier = modifier.background(Color.Black)) {
+        AndroidView(
+            factory = {
+                PlayerView(context).apply {
+                    player = exoPlayer
+                    useController = true
+                    setBackgroundColor(android.graphics.Color.BLACK)
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+        
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            if (onFullScreenClick != null) {
+                IconButton(
+                    onClick = onFullScreenClick,
+                    modifier = Modifier.background(Color.Black.copy(0.4f), CircleShape)
+                ) {
+                    Icon(Icons.Default.Fullscreen, null, tint = Color.White)
+                }
+            }
+            
+            if (onCloseClick != null) {
+                IconButton(
+                    onClick = onCloseClick,
+                    modifier = Modifier.background(Color.Black.copy(0.4f), CircleShape)
+                ) {
+                    Icon(Icons.Default.Close, null, tint = Color.White)
+                }
+            }
+        }
     }
 }
