@@ -127,6 +127,125 @@ fun StudentApp(onLogout: () -> Unit) {
     }
 }
 
+// ── Quiz Taking Interface ───────────────────────────────────────────────────
+@Composable
+fun QuizTakingScreen(quiz: QuizDetailDTO, onDismiss: () -> Unit) {
+    var currentQuestionIndex by remember { mutableStateOf(0) }
+    var selectedAnswers by remember { mutableStateOf<Map<Long, Long>>(emptyMap()) } // QuestionId -> AnswerId
+    var isFinished by remember { mutableStateOf(false) }
+    var score by remember { mutableStateOf(0.0) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(modifier = Modifier.fillMaxSize(), color = Color.White) {
+            if (!isFinished) {
+                val question = quiz.question.getOrNull(currentQuestionIndex)
+                Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, null) }
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text(quiz.title, fontWeight = FontWeight.Bold, color = LmsColors.Indigo900)
+                            Text("Question ${currentQuestionIndex + 1} of ${quiz.question.size}", 
+                                style = MaterialTheme.typography.bodySmall, color = LmsColors.Subtitle)
+                        }
+                    }
+                    
+                    Spacer(Modifier.height(24.dp))
+                    LinearProgressIndicator(
+                        progress = { (currentQuestionIndex + 1).toFloat() / quiz.question.size },
+                        modifier = Modifier.fillMaxWidth().clip(CircleShape),
+                        color = LmsColors.Indigo600,
+                        trackColor = LmsColors.Indigo50
+                    )
+                    
+                    if (question != null) {
+                        Spacer(Modifier.height(32.dp))
+                        Text(question.questionText, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = LmsColors.Indigo900)
+                        Spacer(Modifier.height(24.dp))
+                        
+                        question.answers.forEach { answer ->
+                            val isSelected = selectedAnswers[question.questionId] == answer.answerId
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 6.dp)
+                                    .clickable { selectedAnswers = selectedAnswers + (question.questionId to answer.answerId) },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) LmsColors.Indigo50 else Color.White,
+                                border = BorderStroke(1.dp, if (isSelected) LmsColors.Indigo600 else LmsColors.Indigo900.copy(0.1f))
+                            ) {
+                                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    RadioButton(selected = isSelected, onClick = { selectedAnswers = selectedAnswers + (question.questionId to answer.answerId) })
+                                    Spacer(Modifier.width(12.dp))
+                                    Text(answer.answerText, color = LmsColors.Indigo900)
+                                }
+                            }
+                        }
+                    }
+                    
+                    Spacer(Modifier.weight(1f))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (currentQuestionIndex > 0) {
+                            OutlinedButton(
+                                onClick = { currentQuestionIndex-- },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp)
+                            ) { Text("Previous") }
+                        }
+                        
+                        PrimaryButton(
+                            text = if (currentQuestionIndex == quiz.question.size - 1) "Finish" else "Next",
+                            onClick = {
+                                if (currentQuestionIndex < quiz.question.size - 1) {
+                                    currentQuestionIndex++
+                                } else {
+                                    // Calculate Score
+                                    var correctCount = 0
+                                    quiz.question.forEach { q ->
+                                        val selectedAnswerId = selectedAnswers[q.questionId]
+                                        val correctAnswer = q.answers.find { it.isCorrect }
+                                        if (selectedAnswerId == correctAnswer?.answerId) {
+                                            correctCount++
+                                        }
+                                    }
+                                    val totalQuestions = quiz.question.size
+                                    score = if (totalQuestions > 0) {
+                                        (correctCount.toDouble() / totalQuestions) * quiz.totalPoints
+                                    } else 0.0
+                                    isFinished = true
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            enabled = question?.let { selectedAnswers.containsKey(it.questionId) } ?: false
+                        )
+                    }
+                }
+            } else {
+                // Result Screen
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Filled.EmojiEvents, null, tint = LmsColors.Amber500, modifier = Modifier.size(100.dp))
+                    Spacer(Modifier.height(24.dp))
+                    Text("Quiz Completed!", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    Text("You scored", color = LmsColors.Subtitle)
+                    Text("${score.toInt()} / ${quiz.totalPoints.toInt()}", 
+                        style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.ExtraBold, color = LmsColors.Indigo600)
+                    Spacer(Modifier.height(48.dp))
+                    PrimaryButton(text = "Close", onClick = onDismiss, modifier = Modifier.fillMaxWidth())
+                }
+            }
+        }
+    }
+}
+
+
 // ── Home Screen ───────────────────────────────────────────────────────────────
 @Composable
 fun StudentHomeScreen(
@@ -334,6 +453,8 @@ fun StudentCourseCard(course: CourseResponseDTO, onClick: () -> Unit) {
     }
 }
 
+
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CategoryCoursesScreen(
@@ -407,6 +528,8 @@ fun CategoryCoursesScreen(
         }
     }
 }
+
+
 
 // ── Browse Screen ─────────────────────────────────────────────────────────────
 @Composable
@@ -502,6 +625,8 @@ fun BrowseCoursesScreen(onCourseClick: (Long) -> Unit) {
         }
     }
 }
+
+
 
 // ── Course Detail Screen ───────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
@@ -763,38 +888,62 @@ fun CourseDetailScreen(courseId: Long, onBack: () -> Unit) {
                             AnimatedVisibility(visible = expanded) {
                                 Column(modifier = Modifier.padding(top = 12.dp)) {
                                     section.lessons.forEach { lesson ->
-                                        Row(modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 8.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(if (activeLesson?.lessonId == lesson.lessonId) LmsColors.Indigo50 else Color.Transparent)
-                                            .clickable { 
-                                                activeLesson = lesson
-                                                isViewingVideo = true
-                                            }
-                                            .padding(8.dp),
-                                            verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(
-                                                imageVector = if (activeLesson?.lessonId == lesson.lessonId) Icons.Filled.PlayCircle else Icons.Outlined.PlayCircle,
-                                                contentDescription = null,
-                                                tint = if (activeLesson?.lessonId == lesson.lessonId) LmsColors.Indigo600 else LmsColors.Indigo600.copy(0.6f),
-                                                modifier = Modifier.size(24.dp)
-                                            )
-                                            Spacer(Modifier.width(12.dp))
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    lesson.title,
-                                                    color = LmsColors.Indigo900,
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    fontWeight = if (activeLesson?.lessonId == lesson.lessonId) FontWeight.Bold else FontWeight.Normal
+                                        var lessonQuizzes by remember { mutableStateOf<List<QuizDetailDTO>>(emptyList()) }
+                                        LaunchedEffect(lesson.lessonId) {
+                                            try {
+                                                val res = NetworkClient.apiService.getLesson(lesson.lessonId)
+                                                if (res.isSuccessful) lessonQuizzes = res.body()?.quizz ?: emptyList()
+                                            } catch (_: Exception) {}
+                                        }
+
+                                        Column {
+                                            Row(modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 4.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(if (activeLesson?.lessonId == lesson.lessonId) LmsColors.Indigo50 else Color.Transparent)
+                                                .clickable { 
+                                                    activeLesson = lesson
+                                                    isViewingVideo = true
+                                                }
+                                                .padding(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    imageVector = if (activeLesson?.lessonId == lesson.lessonId) Icons.Filled.PlayCircle else Icons.Outlined.PlayCircle,
+                                                    contentDescription = null,
+                                                    tint = if (activeLesson?.lessonId == lesson.lessonId) LmsColors.Indigo600 else LmsColors.Indigo600.copy(0.6f),
+                                                    modifier = Modifier.size(24.dp)
                                                 )
+                                                Spacer(Modifier.width(12.dp))
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        lesson.title,
+                                                        color = LmsColors.Indigo900,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        fontWeight = if (activeLesson?.lessonId == lesson.lessonId) FontWeight.Bold else FontWeight.Normal
+                                                    )
+                                                }
                                             }
-                                            if (activeLesson?.lessonId == lesson.lessonId) {
-                                                Surface(
-                                                    shape = CircleShape,
-                                                    color = LmsColors.Indigo600,
-                                                    modifier = Modifier.size(8.dp)
-                                                ) {}
+
+                                            // Quizzes for this lesson
+                                            lessonQuizzes.forEach { quiz ->
+                                                var showQuiz by remember { mutableStateOf(false) }
+                                                Row(modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(start = 32.dp, top = 2.dp, bottom = 2.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(LmsColors.Amber500.copy(0.1f))
+                                                    .clickable { showQuiz = true }
+                                                    .padding(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically) {
+                                                    Icon(Icons.Default.Quiz, null, tint = LmsColors.Amber500, modifier = Modifier.size(20.dp))
+                                                    Spacer(Modifier.width(12.dp))
+                                                    Text(quiz.title, style = MaterialTheme.typography.bodySmall, color = LmsColors.Indigo900)
+                                                }
+
+                                                if (showQuiz) {
+                                                    QuizTakingScreen(quiz = quiz, onDismiss = { showQuiz = false })
+                                                }
                                             }
                                         }
                                     }
@@ -961,6 +1110,8 @@ fun MyLearningScreen(onCourseClick: (Long) -> Unit) {
     }
 }
 
+
+
 // ── Student Profile ────────────────────────────────────────────────────────────
 @Composable
 fun StudentProfileScreen(onLogout: () -> Unit) {
@@ -1095,3 +1246,5 @@ fun StudentProfileScreen(onLogout: () -> Unit) {
         }
     }
 }
+
+

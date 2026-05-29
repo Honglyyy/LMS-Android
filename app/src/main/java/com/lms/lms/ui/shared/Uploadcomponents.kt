@@ -391,7 +391,9 @@ fun Uri.toMultipartPart(context: Context, partName: String): MultipartBody.Part 
 
 /** Prepend the base server URL if the path starts with /uploads/ */
 fun buildFullUrl(path: String): String {
+    if (path.isBlank()) return ""
     if (path.startsWith("http")) return path
-    val base = "http://192.168.0.193:8080"   // Matched to NetworkClient.BASE_URL
-    return "$base$path"
+    val base = "http://192.168.0.194:8080"   // Matched to NetworkClient.BASE_URL
+    val normalizedPath = if (path.startsWith("/")) path else "/$path"
+    return "$base$normalizedPath"
 }

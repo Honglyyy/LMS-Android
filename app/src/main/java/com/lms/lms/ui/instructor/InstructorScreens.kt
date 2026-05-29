@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.automirrored.outlined.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -24,13 +26,12 @@ import com.lms.lms.ui.shared.*
 import kotlinx.coroutines.launch
 
 // ── Instructor Nav ─────────────────────────────────────────────────────────────
-enum class InstructorTab { DASHBOARD, COURSES, SECTIONS, LESSONS, PROFILE }
+enum class InstructorTab { DASHBOARD, COURSES, PROFILE }
 
 @Composable
 fun InstructorApp(onLogout: () -> Unit) {
     var currentTab by remember { mutableStateOf(InstructorTab.DASHBOARD) }
     var categories by remember { mutableStateOf<List<CategoryResponseDTO>>(emptyList()) }
-    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         try {
@@ -44,9 +45,7 @@ fun InstructorApp(onLogout: () -> Unit) {
             NavigationBar(containerColor = Color.White) {
                 listOf(
                     InstructorTab.DASHBOARD to (Icons.Filled.Dashboard  to "Dashboard"),
-                    InstructorTab.COURSES   to (Icons.Filled.MenuBook   to "Courses"),
-                    InstructorTab.SECTIONS  to (Icons.Filled.Layers     to "Sections"),
-                    InstructorTab.LESSONS   to (Icons.Filled.PlayCircle to "Lessons"),
+                    InstructorTab.COURSES   to (Icons.AutoMirrored.Filled.MenuBook   to "My Courses"),
                     InstructorTab.PROFILE   to (Icons.Filled.Person     to "Profile")
                 ).forEach { (tab, iconLabel) ->
                     NavigationBarItem(
@@ -68,8 +67,6 @@ fun InstructorApp(onLogout: () -> Unit) {
             when (currentTab) {
                 InstructorTab.DASHBOARD -> InstructorDashboard()
                 InstructorTab.COURSES   -> InstructorCoursesScreen(categories)
-                InstructorTab.SECTIONS  -> InstructorSectionsScreen()
-                InstructorTab.LESSONS   -> InstructorLessonsScreen()
                 InstructorTab.PROFILE   -> InstructorProfileScreen(onLogout)
             }
         }
@@ -134,7 +131,7 @@ fun InstructorDashboard() {
             Spacer(Modifier.height(12.dp))
             Row(modifier = Modifier.padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatCard("Courses", courses.size.toString(), Icons.Filled.MenuBook,
+                StatCard("Courses", courses.size.toString(), Icons.AutoMirrored.Filled.MenuBook,
                     LmsColors.Indigo600, modifier = Modifier.weight(1f))
                 StatCard("Students", enrollments.size.toString(), Icons.Filled.People,
                     LmsColors.Teal500, modifier = Modifier.weight(1f))
@@ -172,7 +169,7 @@ fun InstructorDashboard() {
                                 )
                             } else {
                                 Box(modifier = Modifier.fillMaxSize().background(LmsColors.Indigo50), contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Outlined.MenuBook, null, tint = LmsColors.Indigo600)
+                                    Icon(Icons.AutoMirrored.Outlined.MenuBook, null, tint = LmsColors.Indigo600)
                                 }
                             }
                         }
@@ -249,6 +246,7 @@ fun InstructorCoursesScreen(categories: List<CategoryResponseDTO>) {
     var loading     by remember { mutableStateOf(true) }
     var showDialog  by remember { mutableStateOf(false) }
     var editCourse  by remember { mutableStateOf<CourseResponseDTO?>(null) }
+    var managingCourse by remember { mutableStateOf<CourseResponseDTO?>(null) }
     val snackbar    = remember { SnackbarHostState() }
 
     fun load() { scope.launch {
@@ -261,36 +259,46 @@ fun InstructorCoursesScreen(categories: List<CategoryResponseDTO>) {
     } }
     LaunchedEffect(Unit) { load() }
 
-    Scaffold(
-        floatingActionButton = {
-            FloatingActionButton(onClick = { editCourse = null; showDialog = true },
-                containerColor = LmsColors.Indigo600, contentColor = Color.White) {
-                Icon(Icons.Filled.Add, null)
-            }
-        },
-        snackbarHost = { LmsSnackbarHost(snackbar) }
-    ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding).background(LmsColors.Surface)) {
-            GradientHeader("My Courses", "${courses.size} published")
-            if (loading) { LoadingIndicator() } else {
-                LazyColumn(contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 80.dp)) {
-                    items(courses) { course ->
-                        InstructorCourseItem(
-                            course = course,
-                            onEdit = { editCourse = course; showDialog = true },
-                            onDelete = {
-                                scope.launch {
-                                    try {
-                                        NetworkClient.apiService.deleteMyCourse(course.courseId)  // ← courseId
-                                        snackbar.showSnackbar("Course deleted")
-                                        load()
-                                    } catch (_: Exception) { snackbar.showSnackbar("Failed to delete") }
+    if (managingCourse != null) {
+        InstructorCurriculumManager(
+            course = managingCourse!!,
+            onBack = { managingCourse = null; load() }
+        )
+    } else {
+        Scaffold(
+            floatingActionButton = {
+                FloatingActionButton(onClick = { editCourse = null; showDialog = true },
+                    containerColor = LmsColors.Indigo600, contentColor = Color.White) {
+                    Icon(Icons.Filled.Add, null)
+                }
+            },
+            snackbarHost = { LmsSnackbarHost(snackbar) }
+        ) { padding ->
+            Column(modifier = Modifier.fillMaxSize().padding(padding).background(LmsColors.Surface)) {
+                GradientHeader("My Courses", "${courses.size} published")
+                if (loading) { LoadingIndicator() } else {
+                    LazyColumn(contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 80.dp)) {
+                        items(courses) { course ->
+                            InstructorCourseItem(
+                                course = course,
+                                onEdit = { editCourse = course; showDialog = true },
+                                onManage = { managingCourse = course },
+                                onDelete = {
+                                    scope.launch {
+                                        try {
+                                            NetworkClient.apiService.deleteMyCourse(course.courseId)
+                                            snackbar.showSnackbar("Course deleted")
+                                            load()
+                                        } catch (_: Exception) {
+                                            snackbar.showSnackbar("Failed to delete")
+                                        }
+                                    }
                                 }
-                            }
-                        )
-                    }
-                    if (courses.isEmpty()) {
-                        item { EmptyState("No courses yet. Tap + to create one.", Icons.Outlined.MenuBook) }
+                            )
+                        }
+                        if (courses.isEmpty()) {
+                            item { EmptyState("No courses yet. Tap + to create one.", Icons.AutoMirrored.Outlined.MenuBook) }
+                        }
                     }
                 }
             }
@@ -306,7 +314,7 @@ fun InstructorCoursesScreen(categories: List<CategoryResponseDTO>) {
                 scope.launch {
                     try {
                         if (editCourse != null)
-                            NetworkClient.apiService.updateMyCourse(editCourse!!.courseId, dto)  // ← courseId
+                            NetworkClient.apiService.updateMyCourse(editCourse!!.courseId, dto)
                         else
                             NetworkClient.apiService.createMyCourse(dto)
                         snackbar.showSnackbar("Course saved!")
@@ -323,46 +331,60 @@ fun InstructorCoursesScreen(categories: List<CategoryResponseDTO>) {
 fun InstructorCourseItem(
     course: CourseResponseDTO,
     onEdit: () -> Unit,
+    onManage: () -> Unit,
     onDelete: () -> Unit
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White)) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(modifier = Modifier.size(52.dp).clip(RoundedCornerShape(12.dp))) {
-                if (!course.coverDir.isNullOrBlank()) {
-                    AsyncImage(
-                        model = buildFullUrl(course.coverDir),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Box(modifier = Modifier.fillMaxSize().background(
-                        androidx.compose.ui.graphics.Brush.linearGradient(
-                            listOf(LmsColors.Indigo600, LmsColors.Indigo400))),
-                        contentAlignment = Alignment.Center) {
-                        Icon(Icons.Outlined.MenuBook, null, tint = Color.White, modifier = Modifier.size(26.dp))
+        Column {
+            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.size(52.dp).clip(RoundedCornerShape(12.dp))) {
+                    if (!course.coverDir.isNullOrBlank()) {
+                        AsyncImage(
+                            model = buildFullUrl(course.coverDir),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize().background(
+                            androidx.compose.ui.graphics.Brush.linearGradient(
+                                listOf(LmsColors.Indigo600, LmsColors.Indigo400))),
+                            contentAlignment = Alignment.Center) {
+                            Icon(Icons.AutoMirrored.Outlined.MenuBook, null, tint = Color.White, modifier = Modifier.size(26.dp))
+                        }
                     }
                 }
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(course.title, fontWeight = FontWeight.SemiBold,
-                    style = MaterialTheme.typography.bodyLarge)
-                if (course.categories.isNotEmpty()) {
-                    Text(course.categories.joinToString(", "),
-                        style = MaterialTheme.typography.bodySmall, color = LmsColors.Subtitle)
+                Spacer(Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(course.title, fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.bodyLarge)
+                    if (course.categories.isNotEmpty()) {
+                        Text(course.categories.joinToString(", "),
+                            style = MaterialTheme.typography.bodySmall, color = LmsColors.Subtitle)
+                    }
                 }
-                if ((course.price ?: 0.0) > 0) {
-                    Text("${"$%.2f".format(course.price)}", color = LmsColors.Indigo600,
-                        style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                IconButton(onClick = onEdit)   { Icon(Icons.Filled.Edit,   null, tint = LmsColors.Indigo600) }
+                IconButton(onClick = { showDeleteConfirm = true }) {
+                    Icon(Icons.Filled.Delete, null, tint = LmsColors.Error)
                 }
             }
-            IconButton(onClick = onEdit)   { Icon(Icons.Filled.Edit,   null, tint = LmsColors.Indigo600) }
-            IconButton(onClick = { showDeleteConfirm = true }) {
-                Icon(Icons.Filled.Delete, null, tint = LmsColors.Error)
+            
+            Box(modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onManage() }
+                .background(LmsColors.Indigo50.copy(0.5f))
+                .padding(vertical = 12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Settings, null, tint = LmsColors.Indigo600, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Manage Curriculum", color = LmsColors.Indigo600, fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.labelLarge)
+                }
             }
         }
     }
@@ -460,110 +482,174 @@ fun CourseFormDialog(
     )
 }
 
-// ── Sections ──────────────────────────────────────────────────────────────────
+// ── Curriculum Management ───────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InstructorSectionsScreen() {
-    val scope      = rememberCoroutineScope()
-    var sections   by remember { mutableStateOf<List<SectionResponseDTO>>(emptyList()) }
-    var courses    by remember { mutableStateOf<List<CourseResponseDTO>>(emptyList()) }
-    var loading    by remember { mutableStateOf(true) }
-    var showDialog by remember { mutableStateOf(false) }
-    var editSection by remember { mutableStateOf<SectionResponseDTO?>(null) }
-    val snackbar   = remember { SnackbarHostState() }
+fun InstructorCurriculumManager(course: CourseResponseDTO, onBack: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var courseDetail by remember { mutableStateOf<CourseDetailDTO?>(null) }
+    var loading by remember { mutableStateOf(true) }
+    val snackbar = remember { SnackbarHostState() }
 
-    fun load() { scope.launch {
-        loading = true
-        try {
-            val sr = NetworkClient.apiService.getMySections()
-            val cr = NetworkClient.apiService.getMyCourses()
-            if (sr.isSuccessful) sections = sr.body() ?: emptyList()
-            if (cr.isSuccessful) courses  = cr.body() ?: emptyList()
-        } catch (_: Exception) {}
-        loading = false
-    } }
-    LaunchedEffect(Unit) { load() }
+    // Dialog states
+    var showSectionDialog by remember { mutableStateOf(false) }
+    var editSection by remember { mutableStateOf<SectionDetailDTO?>(null) }
+    var showLessonDialog by remember { mutableStateOf(false) }
+    var editLesson by remember { mutableStateOf<LessonDetailDTO?>(null) }
+    var targetSectionId by remember { mutableStateOf<Long?>(null) }
 
-    Scaffold(
-        floatingActionButton = {
-            FloatingActionButton(onClick = { editSection = null; showDialog = true },
-                containerColor = LmsColors.Indigo600, contentColor = Color.White) {
-                Icon(Icons.Filled.Add, null)
-            }
-        },
-        snackbarHost = { LmsSnackbarHost(snackbar) }
-    ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding).background(LmsColors.Surface)) {
-            GradientHeader("Sections", "${sections.size} sections")
-            if (loading) { LoadingIndicator() } else {
-                LazyColumn(contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 80.dp)) {
-                    items(sections) { section ->
-                        SectionItem(
-                            section  = section,
-                            onEdit   = { editSection = section; showDialog = true },
-                            onDelete = {
-                                scope.launch {
-                                    try {
-                                        NetworkClient.apiService.deleteMySection(section.sectionId) // ← sectionId
-                                        snackbar.showSnackbar("Deleted")
-                                        load()
-                                    } catch (_: Exception) { snackbar.showSnackbar("Failed") }
+    // Navigation states
+    var managingQuizLesson by remember { mutableStateOf<LessonDetailDTO?>(null) }
+
+    fun load() {
+        scope.launch {
+            loading = true
+            try {
+                val res = NetworkClient.apiService.getCourseDetail(course.courseId)
+                if (res.isSuccessful) courseDetail = res.body()
+            } catch (_: Exception) {}
+            loading = false
+        }
+    }
+    LaunchedEffect(course.courseId) { load() }
+
+    if (managingQuizLesson != null) {
+        InstructorQuizManager(
+            lessonId = managingQuizLesson!!.lessonId,
+            lessonTitle = managingQuizLesson!!.title,
+            onBack = { managingQuizLesson = null; load() }
+        )
+    } else {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(course.title) },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
+                    },
+                    actions = {
+                        TextButton(onClick = { editSection = null; showSectionDialog = true }) {
+                            Icon(Icons.Default.Add, null)
+                            Spacer(Modifier.width(4.dp))
+                            Text("Add Section")
+                        }
+                    }
+                )
+            },
+            snackbarHost = { LmsSnackbarHost(snackbar) }
+        ) { padding ->
+            if (loading) LoadingIndicator() else {
+                LazyColumn(modifier = Modifier.fillMaxSize().padding(padding).background(LmsColors.Surface)) {
+                    courseDetail?.sections?.forEach { section ->
+                        item {
+                            SectionHeaderItem(
+                                section = section,
+                                onEdit = { editSection = section; showSectionDialog = true },
+                                onAddLesson = { targetSectionId = section.sectionId; editLesson = null; showLessonDialog = true },
+                                onDelete = {
+                                    scope.launch {
+                                        try {
+                                            NetworkClient.apiService.deleteMySection(section.sectionId)
+                                            load()
+                                        } catch (_: Exception) { snackbar.showSnackbar("Failed to delete section") }
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
+                        items(section.lessons) { lesson ->
+                            CurriculumLessonItem(
+                                lesson = lesson,
+                                onEdit = { 
+                                    targetSectionId = section.sectionId
+                                    editLesson = lesson
+                                    showLessonDialog = true 
+                                },
+                                onManageQuiz = { managingQuizLesson = lesson },
+                                onDelete = {
+                                    scope.launch {
+                                        try {
+                                            NetworkClient.apiService.deleteMyLesson(lesson.lessonId)
+                                            load()
+                                        } catch (_: Exception) { snackbar.showSnackbar("Failed to delete lesson") }
+                                    }
+                                }
+                            )
+                        }
                     }
-                    if (sections.isEmpty()) {
-                        item { EmptyState("No sections yet", Icons.Outlined.Layers) }
+                    if (courseDetail?.sections?.isEmpty() == true) {
+                        item { EmptyState("No sections yet. Add one to start building your course.", Icons.Outlined.Layers) }
                     }
+                    item { Spacer(Modifier.height(80.dp)) }
                 }
             }
         }
-    }
 
-    if (showDialog) {
-        SectionFormDialog(
-            initial   = editSection,
-            courses   = courses,
-            onDismiss = { showDialog = false },
-            onSave    = { dto ->
-                scope.launch {
-                    try {
-                        if (editSection != null)
-                            NetworkClient.apiService.updateMySection(editSection!!.sectionId, dto)
-                        else
-                            NetworkClient.apiService.createMySection(dto)
-                        snackbar.showSnackbar("Section saved!")
-                        load()
-                    } catch (_: Exception) { snackbar.showSnackbar("Failed to save") }
-                    showDialog = false
+        if (showSectionDialog) {
+            SectionFormDialog(
+                initial = editSection?.let { SectionResponseDTO(it.sectionId, it.title, it.duration, course.courseId, null) },
+                courseId = course.courseId,
+                onDismiss = { showSectionDialog = false },
+                onSave = { dto ->
+                    scope.launch {
+                        try {
+                            if (editSection != null) NetworkClient.apiService.updateMySection(editSection!!.sectionId, dto)
+                            else NetworkClient.apiService.createMySection(dto)
+                            load()
+                        } catch (_: Exception) {}
+                        showSectionDialog = false
+                    }
                 }
-            }
-        )
+            )
+        }
+
+        if (showLessonDialog && targetSectionId != null) {
+            LessonFormDialog(
+                initial = editLesson?.let { LessonResponseDTO(it.lessonId, it.title, it.videoDir, targetSectionId!!, null) },
+                sectionId = targetSectionId!!,
+                onDismiss = { showLessonDialog = false },
+                onSave = { dto ->
+                    scope.launch {
+                        try {
+                            if (editLesson != null) NetworkClient.apiService.updateMyLesson(editLesson!!.lessonId, dto)
+                            else NetworkClient.apiService.createMyLesson(dto)
+                            load()
+                        } catch (_: Exception) {}
+                        showLessonDialog = false
+                    }
+                }
+            )
+        }
     }
 }
 
 @Composable
-fun SectionItem(section: SectionResponseDTO, onEdit: () -> Unit, onDelete: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(modifier = Modifier.size(44.dp).background(LmsColors.Indigo50, RoundedCornerShape(10.dp)),
-                contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Folder, null, tint = LmsColors.Indigo600)
-            }
+fun SectionHeaderItem(section: SectionDetailDTO, onEdit: () -> Unit, onDelete: () -> Unit, onAddLesson: () -> Unit) {
+    Row(modifier = Modifier.fillMaxWidth().background(LmsColors.Indigo50.copy(0.3f)).padding(16.dp, 12.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(section.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            section.duration?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = LmsColors.Subtitle) }
+        }
+        IconButton(onClick = onAddLesson) { Icon(Icons.Default.AddCircleOutline, null, tint = LmsColors.Teal500) }
+        IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, null, tint = LmsColors.Indigo600, modifier = Modifier.size(20.dp)) }
+        IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, null, tint = LmsColors.Error, modifier = Modifier.size(20.dp)) }
+    }
+}
+
+@Composable
+fun CurriculumLessonItem(lesson: LessonDetailDTO, onEdit: () -> Unit, onDelete: () -> Unit, onManageQuiz: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, LmsColors.Indigo50)) {
+        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(if (lesson.videoDir != null) Icons.Default.PlayCircle else Icons.AutoMirrored.Filled.Article, 
+                null, tint = if (lesson.videoDir != null) LmsColors.Teal500 else LmsColors.Indigo600)
             Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(section.title, fontWeight = FontWeight.SemiBold)
-                // ← courseName NOT courseTitle
-                section.courseName?.let {
-                    Text("in: $it", style = MaterialTheme.typography.bodySmall, color = LmsColors.Subtitle)
-                }
-                section.duration?.let {
-                    Text(it, style = MaterialTheme.typography.labelSmall, color = LmsColors.Subtitle)
-                }
-            }
-            IconButton(onClick = onEdit)   { Icon(Icons.Filled.Edit,   null, tint = LmsColors.Indigo600) }
-            IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, null, tint = LmsColors.Error) }
+            Text(lesson.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            IconButton(onClick = onManageQuiz) { Icon(Icons.Default.Quiz, null, tint = LmsColors.Amber500, modifier = Modifier.size(20.dp)) }
+            IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, null, tint = LmsColors.Indigo600, modifier = Modifier.size(20.dp)) }
+            IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, null, tint = LmsColors.Error, modifier = Modifier.size(20.dp)) }
         }
     }
 }
@@ -572,233 +658,52 @@ fun SectionItem(section: SectionResponseDTO, onEdit: () -> Unit, onDelete: () ->
 @Composable
 fun SectionFormDialog(
     initial: SectionResponseDTO?,
-    courses: List<CourseResponseDTO>,
+    courseId: Long,
     onDismiss: () -> Unit,
     onSave: (SectionCreateDTO) -> Unit
 ) {
-    var title            by remember { mutableStateOf(initial?.title ?: "") }
-    var duration         by remember { mutableStateOf(initial?.duration ?: "") }
-    var selectedCourseId by remember { mutableStateOf(initial?.courseId ?: courses.firstOrNull()?.courseId) }
-    var expanded         by remember { mutableStateOf(false) }
+    var title by remember { mutableStateOf(initial?.title ?: "") }
+    var duration by remember { mutableStateOf(initial?.duration ?: "") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "Create Section" else "Edit Section") },
+        title = { Text(if (initial == null) "Add Section" else "Edit Section") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 LmsTextField(value = title, onValueChange = { title = it }, label = "Section Title")
-                LmsTextField(value = duration, onValueChange = { duration = it },
-                    label = "Duration (optional)")
-                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-                    OutlinedTextField(
-                        value = courses.find { it.courseId == selectedCourseId }?.title ?: "Select Course",
-                        onValueChange = {}, readOnly = true,
-                        label = { Text("Course") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        courses.forEach { course ->
-                            DropdownMenuItem(text = { Text(course.title) },
-                                onClick = { selectedCourseId = course.courseId; expanded = false }) // ← courseId
-                        }
-                    }
-                }
+                LmsTextField(value = duration, onValueChange = { duration = it }, label = "Duration (e.g. 1h 30m)")
             }
         },
         confirmButton = {
-            Button(
-                onClick = {
-                    selectedCourseId?.let {
-                        onSave(SectionCreateDTO(
-                            title    = title,
-                            duration = duration.ifBlank { null },
-                            courseId = it
-                        ))
-                    }
-                },
-                enabled = title.isNotBlank() && selectedCourseId != null
-            ) { Text("Save") }
+            Button(onClick = { onSave(SectionCreateDTO(title, duration.ifBlank { null }, courseId)) }, enabled = title.isNotBlank()) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
-}
-
-// ── Lessons ───────────────────────────────────────────────────────────────────
-@Composable
-fun InstructorLessonsScreen() {
-    val scope      = rememberCoroutineScope()
-    var lessons    by remember { mutableStateOf<List<LessonResponseDTO>>(emptyList()) }
-    var sections   by remember { mutableStateOf<List<SectionResponseDTO>>(emptyList()) }
-    var loading    by remember { mutableStateOf(true) }
-    var showDialog by remember { mutableStateOf(false) }
-    var editLesson by remember { mutableStateOf<LessonResponseDTO?>(null) }
-    val snackbar   = remember { SnackbarHostState() }
-
-    fun load() { scope.launch {
-        loading = true
-        try {
-            val lr = NetworkClient.apiService.getMyLessons()
-            val sr = NetworkClient.apiService.getMySections()
-            if (lr.isSuccessful) lessons  = lr.body() ?: emptyList()
-            if (sr.isSuccessful) sections = sr.body() ?: emptyList()
-        } catch (_: Exception) {}
-        loading = false
-    } }
-    LaunchedEffect(Unit) { load() }
-
-    Scaffold(
-        floatingActionButton = {
-            FloatingActionButton(onClick = { editLesson = null; showDialog = true },
-                containerColor = LmsColors.Indigo600, contentColor = Color.White) {
-                Icon(Icons.Filled.Add, null)
-            }
-        },
-        snackbarHost = { LmsSnackbarHost(snackbar) }
-    ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding).background(LmsColors.Surface)) {
-            GradientHeader("Lessons", "${lessons.size} lessons")
-            if (loading) { LoadingIndicator() } else {
-                LazyColumn(contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 80.dp)) {
-                    items(lessons) { lesson ->
-                        LessonItem(
-                            lesson   = lesson,
-                            onEdit   = { editLesson = lesson; showDialog = true },
-                            onDelete = {
-                                scope.launch {
-                                    try {
-                                        NetworkClient.apiService.deleteMyLesson(lesson.lessonId) // ← lessonId
-                                        snackbar.showSnackbar("Lesson deleted")
-                                        load()
-                                    } catch (_: Exception) { snackbar.showSnackbar("Failed") }
-                                }
-                            }
-                        )
-                    }
-                    if (lessons.isEmpty()) {
-                        item { EmptyState("No lessons yet", Icons.Outlined.PlayCircle) }
-                    }
-                }
-            }
-        }
-    }
-
-    if (showDialog) {
-        LessonFormDialog(
-            initial   = editLesson,
-            sections  = sections,
-            onDismiss = { showDialog = false },
-            onSave    = { dto ->
-                scope.launch {
-                    try {
-                        if (editLesson != null)
-                            NetworkClient.apiService.updateMyLesson(editLesson!!.lessonId, dto) // ← lessonId
-                        else
-                            NetworkClient.apiService.createMyLesson(dto)
-                        snackbar.showSnackbar("Lesson saved!")
-                        load()
-                    } catch (_: Exception) { snackbar.showSnackbar("Failed to save") }
-                    showDialog = false
-                }
-            }
-        )
-    }
-}
-
-@Composable
-fun LessonItem(lesson: LessonResponseDTO, onEdit: () -> Unit, onDelete: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(modifier = Modifier.size(44.dp).background(
-                if (lesson.videoDir != null) LmsColors.Teal500.copy(0.12f) else LmsColors.Indigo50,
-                RoundedCornerShape(10.dp)),
-                contentAlignment = Alignment.Center) {
-                Icon(
-                    if (lesson.videoDir != null) Icons.Filled.PlayCircle else Icons.Filled.Article,
-                    null,
-                    tint = if (lesson.videoDir != null) LmsColors.Teal500 else LmsColors.Indigo600
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(lesson.title, fontWeight = FontWeight.SemiBold)
-                // ← sectionName NOT sectionTitle
-                lesson.sectionName?.let {
-                    Text("in: $it", style = MaterialTheme.typography.bodySmall, color = LmsColors.Subtitle)
-                }
-                if (lesson.videoDir != null) {
-                    Text("Video", style = MaterialTheme.typography.labelSmall, color = LmsColors.Teal500)
-                }
-            }
-            IconButton(onClick = onEdit)   { Icon(Icons.Filled.Edit,   null, tint = LmsColors.Indigo600) }
-            IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, null, tint = LmsColors.Error) }
-        }
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LessonFormDialog(
     initial: LessonResponseDTO?,
-    sections: List<SectionResponseDTO>,
+    sectionId: Long,
     onDismiss: () -> Unit,
     onSave: (LessonCreateDTO) -> Unit
 ) {
-    var title            by remember { mutableStateOf(initial?.title ?: "") }
-    var videoDir         by remember { mutableStateOf(initial?.videoDir ?: "") }  // ← videoDir
-    var selectedSectionId by remember { mutableStateOf(initial?.sectionId ?: sections.firstOrNull()?.sectionId) }
-    var expanded         by remember { mutableStateOf(false) }
+    var title by remember { mutableStateOf(initial?.title ?: "") }
+    var videoDir by remember { mutableStateOf(initial?.videoDir ?: "") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "Create Lesson" else "Edit Lesson") },
+        title = { Text(if (initial == null) "Add Lesson" else "Edit Lesson") },
         text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 LmsTextField(value = title, onValueChange = { title = it }, label = "Lesson Title")
-
-                LessonVideoPicker(
-                    currentUrl = videoDir.ifBlank { null },
-                    onUploaded = { videoDir = it }
-                )
-
-                // NOTE: Java LessonCreateDTO has no "content" field — only title, videoDir, sectionId
-                LmsTextField(value = videoDir, onValueChange = { videoDir = it },
-                    label = "Video URL (Manual)")
-                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-                    OutlinedTextField(
-                        value = sections.find { it.sectionId == selectedSectionId }?.title ?: "Select Section",
-                        onValueChange = {}, readOnly = true,
-                        label = { Text("Section") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        sections.forEach { section ->
-                            DropdownMenuItem(text = { Text(section.title) },
-                                onClick = { selectedSectionId = section.sectionId; expanded = false })
-                        }
-                    }
-                }
+                LessonVideoPicker(currentUrl = videoDir.ifBlank { null }, onUploaded = { videoDir = it })
+                LmsTextField(value = videoDir, onValueChange = { videoDir = it }, label = "Video URL (Manual)")
             }
         },
         confirmButton = {
-            Button(
-                onClick = {
-                    selectedSectionId?.let {
-                        onSave(LessonCreateDTO(
-                            title     = title,
-                            videoDir  = videoDir.ifBlank { null },  // ← videoDir, no content
-                            sectionId = it
-                        ))
-                    }
-                },
-                enabled = title.isNotBlank() && selectedSectionId != null
-            ) { Text("Save") }
+            Button(onClick = { onSave(LessonCreateDTO(title, videoDir.ifBlank { null }, sectionId)) }, enabled = title.isNotBlank()) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
@@ -858,10 +763,518 @@ fun InstructorProfileScreen(onLogout: () -> Unit) {
             colors = ButtonDefaults.outlinedButtonColors(contentColor = LmsColors.Error),
             border = BorderStroke(1.dp, LmsColors.Error)
         ) {
-            Icon(Icons.Filled.Logout, null)
+            Icon(Icons.AutoMirrored.Filled.Logout, null)
             Spacer(Modifier.width(8.dp))
             Text("Sign Out", fontWeight = FontWeight.SemiBold)
         }
         Spacer(Modifier.height(40.dp))
     }
 }
+
+// ── Quiz Management ──────────────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun InstructorQuizManager(lessonId: Long, lessonTitle: String, onBack: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var lessonDetail by remember { mutableStateOf<LessonQuizDTO?>(null) }
+    var loading by remember { mutableStateOf(true) }
+    var showQuizDialog by remember { mutableStateOf(false) }
+    var editQuiz by remember { mutableStateOf<QuizDetailDTO?>(null) }
+    var managingQuestionQuiz by remember { mutableStateOf<QuizDetailDTO?>(null) }
+    val snackbar = remember { SnackbarHostState() }
+
+    fun load() {
+        scope.launch {
+            loading = true
+            try {
+                val res = NetworkClient.apiService.getLesson(lessonId)
+                if (res.isSuccessful) lessonDetail = res.body()
+            } catch (_: Exception) {}
+            loading = false
+        }
+    }
+
+    LaunchedEffect(lessonId) { load() }
+
+    if (managingQuestionQuiz != null) {
+        InstructorQuestionManager(
+            quizId = managingQuestionQuiz!!.quizId,
+            quizTitle = managingQuestionQuiz!!.title,
+            onBack = { 
+                managingQuestionQuiz = null
+                load()
+            }
+        )
+    } else {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("Quizzes: $lessonTitle") },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
+                    }
+                )
+            },
+            floatingActionButton = {
+                FloatingActionButton(onClick = { editQuiz = null; showQuizDialog = true },
+                    containerColor = LmsColors.Indigo600, contentColor = Color.White) {
+                    Icon(Icons.Default.Add, null)
+                }
+            },
+            snackbarHost = { LmsSnackbarHost(snackbar) }
+        ) { padding ->
+            Column(modifier = Modifier.fillMaxSize().padding(padding).background(LmsColors.Surface)) {
+                if (loading) { LoadingIndicator() } else {
+                    LazyColumn(contentPadding = PaddingValues(16.dp)) {
+                        items(lessonDetail?.quizz ?: emptyList()) { quiz ->
+                            QuizItem(
+                                quiz = quiz,
+                                onEdit = { editQuiz = quiz; showQuizDialog = true },
+                                onManageQuestions = { managingQuestionQuiz = quiz },
+                                onDelete = {
+                                    scope.launch {
+                                        try {
+                                            NetworkClient.apiService.deleteQuiz(quiz.quizId)
+                                            snackbar.showSnackbar("Quiz deleted")
+                                            load()
+                                        } catch (_: Exception) { snackbar.showSnackbar("Failed to delete") }
+                                    }
+                                }
+                            )
+                        }
+                        if (lessonDetail?.quizz?.isEmpty() == true) {
+                            item { EmptyState("No quizzes for this lesson.", Icons.Outlined.Quiz) }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (showQuizDialog) {
+            QuizFormDialog(
+                initial = editQuiz,
+                lessonId = lessonId,
+                onDismiss = { showQuizDialog = false },
+                onSave = { dto ->
+                    scope.launch {
+                        try {
+                            if (editQuiz != null)
+                                NetworkClient.apiService.updateQuiz(editQuiz!!.quizId, dto)
+                            else
+                                NetworkClient.apiService.createQuiz(dto)
+                            snackbar.showSnackbar("Quiz saved!")
+                            load()
+                        } catch (_: Exception) { snackbar.showSnackbar("Failed to save") }
+                        showQuizDialog = false
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun QuizItem(quiz: QuizDetailDTO, onEdit: () -> Unit, onDelete: () -> Unit, onManageQuestions: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.size(44.dp).background(LmsColors.Amber500.copy(0.1f), RoundedCornerShape(10.dp)),
+                contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.Quiz, null, tint = LmsColors.Amber500)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(quiz.title, fontWeight = FontWeight.SemiBold)
+                Text("${quiz.question.size} Questions • ${quiz.totalPoints} Points", 
+                    style = MaterialTheme.typography.bodySmall, color = LmsColors.Subtitle)
+            }
+            IconButton(onClick = onManageQuestions) { Icon(Icons.AutoMirrored.Filled.List, null, tint = LmsColors.Indigo600) }
+            IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, null, tint = LmsColors.Indigo600) }
+            IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, null, tint = LmsColors.Error) }
+        }
+    }
+}
+
+@Composable
+fun QuizFormDialog(
+    initial: QuizDetailDTO?,
+    lessonId: Long,
+    onDismiss: () -> Unit,
+    onSave: (QuizCreateDTO) -> Unit
+) {
+    var title by remember { mutableStateOf(initial?.title ?: "") }
+    var points by remember { mutableStateOf(initial?.totalPoints?.toString() ?: "100") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "Create Quiz" else "Edit Quiz") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                LmsTextField(value = title, onValueChange = { title = it }, label = "Quiz Title")
+                LmsTextField(value = points, onValueChange = { points = it }, label = "Total Points")
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(QuizCreateDTO(
+                        title = title,
+                        totalPoints = points.toDoubleOrNull() ?: 0.0,
+                        lessonId = lessonId
+                    ))
+                },
+                enabled = title.isNotBlank()
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun InstructorQuestionManager(quizId: Long, quizTitle: String, onBack: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var questions by remember { mutableStateOf<List<QuestionDetailDTO>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var showQuestionDialog by remember { mutableStateOf(false) }
+    var editQuestion by remember { mutableStateOf<QuestionDetailDTO?>(null) }
+    var managingAnswerQuestion by remember { mutableStateOf<QuestionDetailDTO?>(null) }
+    val snackbar = remember { SnackbarHostState() }
+
+    fun load() {
+        scope.launch {
+            loading = true
+            try {
+                // To get QuestionDetailDTO (which includes answers), we fetch both and join
+                val qRes = NetworkClient.apiService.getQuestions()
+                val aRes = NetworkClient.apiService.getAnswers()
+                if (qRes.isSuccessful && aRes.isSuccessful) {
+                    val allAnswers = aRes.body() ?: emptyList()
+                    questions = qRes.body()?.filter { it.quizId == quizId }?.map { q ->
+                        QuestionDetailDTO(
+                            questionId = q.questionId,
+                            questionText = q.questionText,
+                            point = 0,
+                            answers = allAnswers.filter { it.questionId == q.questionId }.map {
+                                AnswerDetailDTO(it.answerId, it.answerText, it.isCorrect)
+                            }
+                        )
+                    } ?: emptyList()
+                }
+            } catch (_: Exception) {}
+            loading = false
+        }
+    }
+
+    // Since we don't have a direct "get quiz detail" endpoint that returns questions,
+    // and we want to keep it simple, let's just use the questions we have or fetch them.
+    // For now, let's assume we can't easily refresh the whole list with answers 
+    // without the Lesson context. 
+    
+    // HOWEVER, we can still show and edit them.
+    
+    LaunchedEffect(quizId) { load() }
+
+    if (managingAnswerQuestion != null) {
+        InstructorAnswerManager(
+            questionId = managingAnswerQuestion!!.questionId,
+            questionText = managingAnswerQuestion!!.questionText,
+            onBack = { 
+                managingAnswerQuestion = null
+                load() // Refresh after managing answers
+            }
+        )
+    } else {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("Questions: $quizTitle") },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
+                    }
+                )
+            },
+            floatingActionButton = {
+                FloatingActionButton(onClick = { editQuestion = null; showQuestionDialog = true },
+                    containerColor = LmsColors.Indigo600, contentColor = Color.White) {
+                    Icon(Icons.Default.Add, null)
+                }
+            },
+            snackbarHost = { LmsSnackbarHost(snackbar) }
+        ) { padding ->
+            Column(modifier = Modifier.fillMaxSize().padding(padding).background(LmsColors.Surface)) {
+                if (loading) LoadingIndicator() else {
+                    LazyColumn(contentPadding = PaddingValues(16.dp)) {
+                        items(questions) { question ->
+                            QuestionItem(
+                                question = question,
+                                onEdit = { editQuestion = question; showQuestionDialog = true },
+                                onManageAnswers = { managingAnswerQuestion = question },
+                                onDelete = {
+                                    scope.launch {
+                                        try {
+                                            NetworkClient.apiService.deleteQuestion(question.questionId)
+                                            snackbar.showSnackbar("Question deleted")
+                                            load()
+                                        } catch (_: Exception) { snackbar.showSnackbar("Failed to delete") }
+                                    }
+                                }
+                            )
+                        }
+                        if (questions.isEmpty()) {
+                            item { EmptyState("No questions yet.", Icons.AutoMirrored.Outlined.HelpOutline) }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (showQuestionDialog) {
+            QuestionFormDialog(
+                initial = editQuestion,
+                quizId = quizId,
+                onDismiss = { showQuestionDialog = false },
+                onSave = { dto ->
+                    scope.launch {
+                        try {
+                            if (editQuestion != null) {
+                                NetworkClient.apiService.updateQuestion(editQuestion!!.questionId, dto)
+                            } else {
+                                NetworkClient.apiService.createQuestion(dto)
+                            }
+                            snackbar.showSnackbar("Question saved!")
+                            load()
+                        } catch (_: Exception) { snackbar.showSnackbar("Failed to save") }
+                        showQuestionDialog = false
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun QuestionItem(question: QuestionDetailDTO, onEdit: () -> Unit, onDelete: () -> Unit, onManageAnswers: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(question.questionText, fontWeight = FontWeight.SemiBold)
+            
+            if (question.answers.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                question.answers.take(2).forEach { answer ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            if (answer.isCorrect) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                            null,
+                            tint = if (answer.isCorrect) LmsColors.Success else LmsColors.Subtitle.copy(0.3f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(answer.answerText, style = MaterialTheme.typography.bodySmall, color = LmsColors.Subtitle, maxLines = 1)
+                    }
+                }
+                if (question.answers.size > 2) {
+                    Text("... and ${question.answers.size - 2} more", 
+                        style = MaterialTheme.typography.bodySmall, color = LmsColors.Subtitle.copy(0.7f),
+                        modifier = Modifier.padding(start = 22.dp))
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${question.answers.size} Answers", 
+                    style = MaterialTheme.typography.bodySmall, color = LmsColors.Subtitle)
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = onManageAnswers) { Icon(Icons.Default.QuestionAnswer, null, tint = LmsColors.Indigo600) }
+                IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, null, tint = LmsColors.Indigo600) }
+                IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, null, tint = LmsColors.Error) }
+            }
+        }
+    }
+}
+
+@Composable
+fun QuestionFormDialog(
+    initial: QuestionDetailDTO?,
+    quizId: Long,
+    onDismiss: () -> Unit,
+    onSave: (QuestionCreateDTO) -> Unit
+) {
+    var text by remember { mutableStateOf(initial?.questionText ?: "") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "Create Question" else "Edit Question") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                LmsTextField(value = text, onValueChange = { text = it }, label = "Question Text", singleLine = false)
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(QuestionCreateDTO(
+                        questionText = text,
+                        quizId = quizId
+                    ))
+                },
+                enabled = text.isNotBlank()
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun InstructorAnswerManager(questionId: Long, questionText: String, onBack: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var answers by remember { mutableStateOf<List<AnswerDetailDTO>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var showAnswerDialog by remember { mutableStateOf(false) }
+    var editAnswer by remember { mutableStateOf<AnswerDetailDTO?>(null) }
+    val snackbar = remember { SnackbarHostState() }
+
+    fun load() {
+        scope.launch {
+            loading = true
+            try {
+                // Fetch all answers and filter by questionId
+                val res = NetworkClient.apiService.getAnswers()
+                if (res.isSuccessful) {
+                    answers = res.body()?.filter { it.questionId == questionId }?.map {
+                        AnswerDetailDTO(it.answerId, it.answerText, it.isCorrect)
+                    } ?: emptyList()
+                }
+            } catch (_: Exception) {}
+            loading = false
+        }
+    }
+
+    LaunchedEffect(questionId) { load() }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Answers: $questionText", maxLines = 1) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
+                }
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { editAnswer = null; showAnswerDialog = true },
+                containerColor = LmsColors.Indigo600, contentColor = Color.White) {
+                Icon(Icons.Default.Add, null)
+            }
+        },
+        snackbarHost = { LmsSnackbarHost(snackbar) }
+    ) { padding ->
+        Column(modifier = Modifier.fillMaxSize().padding(padding).background(LmsColors.Surface)) {
+            if (loading) LoadingIndicator() else {
+                LazyColumn(contentPadding = PaddingValues(16.dp)) {
+                    items(answers) { answer ->
+                        AnswerItem(
+                            answer = answer,
+                            onEdit = { editAnswer = answer; showAnswerDialog = true },
+                            onDelete = {
+                                scope.launch {
+                                    try {
+                                        NetworkClient.apiService.deleteAnswer(answer.answerId)
+                                        snackbar.showSnackbar("Answer deleted")
+                                        load()
+                                    } catch (_: Exception) { snackbar.showSnackbar("Failed to delete") }
+                                }
+                            }
+                        )
+                    }
+                    if (answers.isEmpty()) {
+                        item { EmptyState("No answers yet.", Icons.Outlined.Checklist) }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAnswerDialog) {
+        AnswerFormDialog(
+            initial = editAnswer,
+            questionId = questionId,
+            onDismiss = { showAnswerDialog = false },
+            onSave = { dto ->
+                scope.launch {
+                    try {
+                        if (editAnswer != null) {
+                            NetworkClient.apiService.updateAnswer(editAnswer!!.answerId, dto)
+                        } else {
+                            NetworkClient.apiService.createAnswer(dto)
+                        }
+                        snackbar.showSnackbar("Answer saved!")
+                        load()
+                    } catch (_: Exception) { snackbar.showSnackbar("Failed to save") }
+                    showAnswerDialog = false
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun AnswerItem(answer: AnswerDetailDTO, onEdit: () -> Unit, onDelete: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                if (answer.isCorrect) Icons.Default.CheckCircle else Icons.Default.Cancel,
+                null,
+                tint = if (answer.isCorrect) LmsColors.Success else LmsColors.Subtitle.copy(0.5f)
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(answer.answerText, modifier = Modifier.weight(1f))
+            IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, null, tint = LmsColors.Indigo600) }
+            IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, null, tint = LmsColors.Error) }
+        }
+    }
+}
+
+@Composable
+fun AnswerFormDialog(
+    initial: AnswerDetailDTO?,
+    questionId: Long,
+    onDismiss: () -> Unit,
+    onSave: (AnswerCreateDTO) -> Unit
+) {
+    var text by remember { mutableStateOf(initial?.answerText ?: "") }
+    var isCorrect by remember { mutableStateOf(initial?.isCorrect ?: false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "Create Answer" else "Edit Answer") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                LmsTextField(value = text, onValueChange = { text = it }, label = "Answer Text")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = isCorrect, onCheckedChange = { isCorrect = it })
+                    Text("Correct Answer")
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(AnswerCreateDTO(
+                        answerText = text,
+                        isCorrect = isCorrect,
+                        questionId = questionId
+                    ))
+                },
+                enabled = text.isNotBlank()
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
