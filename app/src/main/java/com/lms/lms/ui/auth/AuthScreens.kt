@@ -23,19 +23,19 @@ import com.lms.lms.data.model.*
 import com.lms.lms.ui.shared.*
 import kotlinx.coroutines.launch
 
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.lms.lms.ui.viewmodel.AuthViewModel
+import android.util.Base64
+import org.json.JSONObject
+
 // ── Login Screen ──────────────────────────────────────────────────────────────
 @Composable
 fun LoginScreen(
     onLoginSuccess: (role: String) -> Unit,
     onNavigateToRegister: () -> Unit,
-    onNavigateToForgotPassword: () -> Unit
+    onNavigateToForgotPassword: () -> Unit,
+    viewModel: AuthViewModel = viewModel()
 ) {
-    val scope = rememberCoroutineScope()
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -122,23 +122,23 @@ fun LoginScreen(
                     Spacer(Modifier.height(24.dp))
 
                     LmsTextField(
-                        value = email,
-                        onValueChange = { email = it; error = null },
+                        value = viewModel.loginEmail,
+                        onValueChange = { viewModel.loginEmail = it; viewModel.loginError = null },
                         label = "Email",
                         leadingIcon = Icons.Outlined.Email
                     )
                     Spacer(Modifier.height(14.dp))
                     LmsTextField(
-                        value = password,
-                        onValueChange = { password = it; error = null },
+                        value = viewModel.loginPassword,
+                        onValueChange = { viewModel.loginPassword = it; viewModel.loginError = null },
                         label = "Password",
                         leadingIcon = Icons.Outlined.Lock,
                         isPassword = true
                     )
 
-                    AnimatedVisibility(visible = error != null) {
+                    AnimatedVisibility(visible = viewModel.loginError != null) {
                         Text(
-                            text = error ?: "",
+                            text = viewModel.loginError ?: "",
                             color = LmsColors.Error,
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(top = 8.dp)
@@ -156,34 +156,10 @@ fun LoginScreen(
                     Spacer(Modifier.height(8.dp))
                     PrimaryButton(
                         text = "Sign In",
-                        onClick = {
-                            scope.launch {
-                                loading = true
-                                error = null
-                                try {
-                                    val res = NetworkClient.apiService.login(
-                                        AuthRequest(email.trim(), password)
-                                    )
-                                    if (res.isSuccessful && res.body() != null) {
-                                        val token = res.body()!!.string().trim()
-                                        NetworkClient.saveToken(token)
-                                        NetworkClient.saveEmail(email.trim())
-                                        // Decode role from JWT or fetch user info
-                                        val role = decodeRoleFromToken(token)
-                                        NetworkClient.saveRole(role)
-                                        onLoginSuccess(role)
-                                    } else {
-                                        error = "Invalid credentials or unverified account"
-                                    }
-                                } catch (e: Exception) {
-                                    error = "Network error: ${e.message}"
-                                }
-                                loading = false
-                            }
-                        },
+                        onClick = { viewModel.login(onLoginSuccess) },
                         modifier = Modifier.fillMaxWidth(),
-                        loading = loading,
-                        enabled = email.isNotBlank() && password.isNotBlank()
+                        loading = viewModel.isLoginLoading,
+                        enabled = viewModel.loginEmail.isNotBlank() && viewModel.loginPassword.isNotBlank()
                     )
                 }
             }
@@ -204,16 +180,9 @@ fun LoginScreen(
 @Composable
 fun RegisterScreen(
     onRegisterSuccess: (email: String) -> Unit,
-    onNavigateToLogin: () -> Unit
+    onNavigateToLogin: () -> Unit,
+    viewModel: AuthViewModel = viewModel()
 ) {
-    val scope = rememberCoroutineScope()
-    var email by remember { mutableStateOf("") }
-    var username by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var selectedRole by remember { mutableStateOf("USER") }
-    var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -259,11 +228,11 @@ fun RegisterScreen(
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         listOf("USER" to "Student", "INSTRUCTOR" to "Instructor").forEach { (role, label) ->
-                            val selected = selectedRole == role
+                            val selected = viewModel.regSelectedRole == role
                             Surface(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .clickable { selectedRole = role },
+                                    .clickable { viewModel.regSelectedRole = role },
                                 shape = RoundedCornerShape(12.dp),
                                 color = if (selected) LmsColors.Indigo600 else LmsColors.Indigo50,
                                 border = if (selected) null else BorderStroke(1.dp, LmsColors.Indigo200)
@@ -292,30 +261,30 @@ fun RegisterScreen(
 
                     Spacer(Modifier.height(20.dp))
                     LmsTextField(
-                        value = username,
-                        onValueChange = { username = it },
+                        value = viewModel.regUsername,
+                        onValueChange = { viewModel.regUsername = it },
                         label = "Username",
                         leadingIcon = Icons.Outlined.Person
                     )
                     Spacer(Modifier.height(12.dp))
                     LmsTextField(
-                        value = email,
-                        onValueChange = { email = it },
+                        value = viewModel.regEmail,
+                        onValueChange = { viewModel.regEmail = it },
                         label = "Email",
                         leadingIcon = Icons.Outlined.Email
                     )
                     Spacer(Modifier.height(12.dp))
                     LmsTextField(
-                        value = password,
-                        onValueChange = { password = it },
+                        value = viewModel.regPassword,
+                        onValueChange = { viewModel.regPassword = it },
                         label = "Password",
                         leadingIcon = Icons.Outlined.Lock,
                         isPassword = true
                     )
 
-                    AnimatedVisibility(visible = error != null) {
+                    AnimatedVisibility(visible = viewModel.regError != null) {
                         Text(
-                            error ?: "",
+                            viewModel.regError ?: "",
                             color = LmsColors.Error,
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(top = 8.dp)
@@ -325,28 +294,10 @@ fun RegisterScreen(
                     Spacer(Modifier.height(20.dp))
                     PrimaryButton(
                         text = "Create Account",
-                        onClick = {
-                            scope.launch {
-                                loading = true
-                                error = null
-                                try {
-                                    val res = NetworkClient.apiService.register(
-                                        RegisterRequest(email.trim(), username.trim(), password, selectedRole)
-                                    )
-                                    if (res.isSuccessful) {
-                                        onRegisterSuccess(email.trim())
-                                    } else {
-                                        error = "Registration failed. Try a different email."
-                                    }
-                                } catch (e: Exception) {
-                                    error = "Network error: ${e.message}"
-                                }
-                                loading = false
-                            }
-                        },
+                        onClick = { viewModel.register(onRegisterSuccess) },
                         modifier = Modifier.fillMaxWidth(),
-                        loading = loading,
-                        enabled = email.isNotBlank() && username.isNotBlank() && password.length >= 6
+                        loading = viewModel.isRegLoading,
+                        enabled = viewModel.regEmail.isNotBlank() && viewModel.regUsername.isNotBlank() && viewModel.regPassword.length >= 6
                     )
                 }
             }
@@ -368,14 +319,9 @@ fun RegisterScreen(
 fun OtpVerificationScreen(
     email: String,
     onVerified: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    viewModel: AuthViewModel = viewModel()
 ) {
-    val scope = rememberCoroutineScope()
-    var otp by remember { mutableStateOf("") }
-    var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var success by remember { mutableStateOf(false) }
-
     Scaffold { padding ->
         Column(
             modifier = Modifier
@@ -404,39 +350,21 @@ fun OtpVerificationScreen(
             )
             Spacer(Modifier.height(32.dp))
             LmsTextField(
-                value = otp,
-                onValueChange = { if (it.length <= 6) otp = it },
+                value = viewModel.otpCode,
+                onValueChange = { if (it.length <= 6) viewModel.otpCode = it },
                 label = "OTP Code",
                 leadingIcon = Icons.Outlined.Pin
             )
-            AnimatedVisibility(visible = error != null) {
-                Text(error ?: "", color = LmsColors.Error, style = MaterialTheme.typography.bodySmall)
+            AnimatedVisibility(visible = viewModel.otpError != null) {
+                Text(viewModel.otpError ?: "", color = LmsColors.Error, style = MaterialTheme.typography.bodySmall)
             }
             Spacer(Modifier.height(24.dp))
             PrimaryButton(
-                text = if (success) "Verified ✓" else "Verify Account",
-                onClick = {
-                    scope.launch {
-                        loading = true
-                        error = null
-                        try {
-                            val res = NetworkClient.apiService.verifyOtp(VerifyOtpRequest(email, otp))
-                            if (res.isSuccessful) {
-                                success = true
-                                kotlinx.coroutines.delay(800)
-                                onVerified()
-                            } else {
-                                error = "Invalid OTP. Please try again."
-                            }
-                        } catch (e: Exception) {
-                            error = "Error: ${e.message}"
-                        }
-                        loading = false
-                    }
-                },
+                text = if (viewModel.isOtpSuccess) "Verified ✓" else "Verify Account",
+                onClick = { viewModel.verifyOtp(email, onVerified) },
                 modifier = Modifier.fillMaxWidth(),
-                loading = loading,
-                enabled = otp.length >= 4
+                loading = viewModel.isOtpLoading,
+                enabled = viewModel.otpCode.length >= 4
             )
             Spacer(Modifier.height(12.dp))
             OutlinedButton(
@@ -452,16 +380,7 @@ fun OtpVerificationScreen(
 
 // ── Forgot Password Screen ────────────────────────────────────────────────────
 @Composable
-fun ForgotPasswordScreen(onBack: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    var step by remember { mutableStateOf(0) } // 0 = email, 1 = reset form
-    var email by remember { mutableStateOf("") }
-    var otp by remember { mutableStateOf("") }
-    var newPassword by remember { mutableStateOf("") }
-    var loading by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-
+fun ForgotPasswordScreen(onBack: () -> Unit, viewModel: AuthViewModel = viewModel()) {
     Scaffold { padding ->
         Column(
             modifier = Modifier
@@ -483,7 +402,7 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
             Text("Reset Password", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             Text(
-                if (step == 0) "Enter your email to receive a reset code"
+                if (viewModel.forgotStep == 0) "Enter your email to receive a reset code"
                 else "Enter the OTP sent to your email",
                 style = MaterialTheme.typography.bodyMedium,
                 color = LmsColors.Subtitle,
@@ -491,73 +410,40 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
             )
             Spacer(Modifier.height(32.dp))
 
-            if (step == 0) {
+            if (viewModel.forgotStep == 0) {
                 LmsTextField(
-                    value = email,
-                    onValueChange = { email = it },
+                    value = viewModel.forgotEmail,
+                    onValueChange = { viewModel.forgotEmail = it },
                     label = "Email",
                     leadingIcon = Icons.Outlined.Email
                 )
                 Spacer(Modifier.height(20.dp))
                 PrimaryButton(
                     text = "Send OTP",
-                    onClick = {
-                        scope.launch {
-                            loading = true
-                            error = null
-                            try {
-                                NetworkClient.apiService.sendResetOtp(email.trim())
-                                message = "OTP sent to $email"
-                                step = 1
-                            } catch (e: Exception) {
-                                error = "Error: ${e.message}"
-                            }
-                            loading = false
-                        }
-                    },
+                    onClick = { viewModel.sendResetOtp() },
                     modifier = Modifier.fillMaxWidth(),
-                    loading = loading,
-                    enabled = email.isNotBlank()
+                    loading = viewModel.isForgotLoading,
+                    enabled = viewModel.forgotEmail.isNotBlank()
                 )
             } else {
-                LmsTextField(value = otp, onValueChange = { otp = it }, label = "OTP Code", leadingIcon = Icons.Outlined.Pin)
+                LmsTextField(value = viewModel.forgotOtp, onValueChange = { viewModel.forgotOtp = it }, label = "OTP Code", leadingIcon = Icons.Outlined.Pin)
                 Spacer(Modifier.height(12.dp))
-                LmsTextField(value = newPassword, onValueChange = { newPassword = it }, label = "New Password", isPassword = true, leadingIcon = Icons.Outlined.Lock)
+                LmsTextField(value = viewModel.forgotNewPassword, onValueChange = { viewModel.forgotNewPassword = it }, label = "New Password", isPassword = true, leadingIcon = Icons.Outlined.Lock)
                 Spacer(Modifier.height(20.dp))
                 PrimaryButton(
                     text = "Reset Password",
-                    onClick = {
-                        scope.launch {
-                            loading = true
-                            error = null
-                            try {
-                                val res = NetworkClient.apiService.resetPassword(
-                                    ResetPasswordRequest(email = email.trim(), password = newPassword, otp = otp)
-                                )
-                                if (res.isSuccessful) {
-                                    message = "Password reset! Please login."
-                                    kotlinx.coroutines.delay(1500)
-                                    onBack()
-                                } else {
-                                    error = "Invalid OTP or expired."
-                                }
-                            } catch (e: Exception) {
-                                error = "Error: ${e.message}"
-                            }
-                            loading = false
-                        }
-                    },
+                    onClick = { viewModel.resetPassword(onBack) },
                     modifier = Modifier.fillMaxWidth(),
-                    loading = loading,
-                    enabled = otp.isNotBlank() && newPassword.length >= 6
+                    loading = viewModel.isForgotLoading,
+                    enabled = viewModel.forgotOtp.isNotBlank() && viewModel.forgotNewPassword.length >= 6
                 )
             }
 
-            message?.let {
+            viewModel.forgotMessage?.let {
                 Spacer(Modifier.height(12.dp))
                 Text(it, color = LmsColors.Success, style = MaterialTheme.typography.bodySmall)
             }
-            error?.let {
+            viewModel.forgotError?.let {
                 Spacer(Modifier.height(8.dp))
                 Text(it, color = LmsColors.Error, style = MaterialTheme.typography.bodySmall)
             }

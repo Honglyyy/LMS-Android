@@ -22,6 +22,10 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.lms.lms.data.api.NetworkClient
 import com.lms.lms.data.model.*
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.lms.lms.ui.viewmodel.CourseManagementViewModel
+import com.lms.lms.ui.viewmodel.InstructorViewModel
+import com.lms.lms.ui.viewmodel.QuizViewModel
 import com.lms.lms.ui.shared.*
 import kotlinx.coroutines.launch
 
@@ -30,15 +34,8 @@ enum class InstructorTab { DASHBOARD, COURSES, PROFILE }
 
 @Composable
 fun InstructorApp(onLogout: () -> Unit) {
+    val viewModel: InstructorViewModel = viewModel()
     var currentTab by remember { mutableStateOf(InstructorTab.DASHBOARD) }
-    var categories by remember { mutableStateOf<List<CategoryResponseDTO>>(emptyList()) }
-
-    LaunchedEffect(Unit) {
-        try {
-            val res = NetworkClient.apiService.getAllCategories()
-            if (res.isSuccessful) categories = res.body() ?: emptyList()
-        } catch (_: Exception) {}
-    }
 
     Scaffold(
         bottomBar = {
@@ -65,8 +62,8 @@ fun InstructorApp(onLogout: () -> Unit) {
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
             when (currentTab) {
-                InstructorTab.DASHBOARD -> InstructorDashboard()
-                InstructorTab.COURSES   -> InstructorCoursesScreen(categories)
+                InstructorTab.DASHBOARD -> InstructorDashboard(viewModel)
+                InstructorTab.COURSES   -> InstructorCoursesScreen(viewModel.categories)
                 InstructorTab.PROFILE   -> InstructorProfileScreen(onLogout)
             }
         }
@@ -75,30 +72,12 @@ fun InstructorApp(onLogout: () -> Unit) {
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 @Composable
-fun InstructorDashboard() {
-    var courses     by remember { mutableStateOf<List<CourseResponseDTO>>(emptyList()) }
-    var enrollments by remember { mutableStateOf<List<EnrollmentResponseDTO>>(emptyList()) }
-    var sections    by remember { mutableStateOf<List<SectionResponseDTO>>(emptyList()) }
-    var lessons     by remember { mutableStateOf<List<LessonResponseDTO>>(emptyList()) }
-    var loading     by remember { mutableStateOf(true) }
-
-    LaunchedEffect(Unit) {
-        try {
-            val cr = NetworkClient.apiService.getMyCourses()
-            val sc = NetworkClient.apiService.getMySections()
-            val ls = NetworkClient.apiService.getMyLessons()
-            if (cr.isSuccessful) courses  = cr.body() ?: emptyList()
-            if (sc.isSuccessful) sections = sc.body() ?: emptyList()
-            if (ls.isSuccessful) lessons  = ls.body() ?: emptyList()
-            for (course in (cr.body() ?: emptyList())) {
-                try {
-                    val er = NetworkClient.apiService.getCourseEnrollments(course.courseId)
-                    if (er.isSuccessful) enrollments = enrollments + (er.body() ?: emptyList())
-                } catch (_: Exception) {}
-            }
-        } catch (_: Exception) {}
-        loading = false
-    }
+fun InstructorDashboard(viewModel: InstructorViewModel) {
+    val courses = viewModel.courses
+    val enrollments = viewModel.enrollments
+    val sections = viewModel.sections
+    val lessons = viewModel.lessons
+    val loading = viewModel.isLoading
 
     val email     = NetworkClient.getEmail() ?: "Instructor"
     val firstName = email.substringBefore("@").replaceFirstChar { it.uppercase() }
@@ -241,28 +220,23 @@ fun InstructorDashboard() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InstructorCoursesScreen(categories: List<CategoryResponseDTO>) {
+    val viewModel: CourseManagementViewModel = viewModel()
     val scope = rememberCoroutineScope()
-    var courses     by remember { mutableStateOf<List<CourseResponseDTO>>(emptyList()) }
-    var loading     by remember { mutableStateOf(true) }
+    val courses = viewModel.courses
+    val loading = viewModel.isLoading
+    
     var showDialog  by remember { mutableStateOf(false) }
     var editCourse  by remember { mutableStateOf<CourseResponseDTO?>(null) }
     var managingCourse by remember { mutableStateOf<CourseResponseDTO?>(null) }
     val snackbar    = remember { SnackbarHostState() }
 
-    fun load() { scope.launch {
-        loading = true
-        try {
-            val res = NetworkClient.apiService.getMyCourses()
-            if (res.isSuccessful) courses = res.body() ?: emptyList()
-        } catch (_: Exception) {}
-        loading = false
-    } }
-    LaunchedEffect(Unit) { load() }
+    LaunchedEffect(Unit) { viewModel.loadMyCourses() }
 
     if (managingCourse != null) {
         InstructorCurriculumManager(
             course = managingCourse!!,
-            onBack = { managingCourse = null; load() }
+            viewModel = viewModel,
+            onBack = { managingCourse = null; viewModel.loadMyCourses() }
         )
     } else {
         Scaffold(
@@ -284,15 +258,10 @@ fun InstructorCoursesScreen(categories: List<CategoryResponseDTO>) {
                                 onEdit = { editCourse = course; showDialog = true },
                                 onManage = { managingCourse = course },
                                 onDelete = {
-                                    scope.launch {
-                                        try {
-                                            NetworkClient.apiService.deleteMyCourse(course.courseId)
-                                            snackbar.showSnackbar("Course deleted")
-                                            load()
-                                        } catch (_: Exception) {
-                                            snackbar.showSnackbar("Failed to delete")
-                                        }
-                                    }
+                                    viewModel.deleteCourse(course.courseId,
+                                        onSuccess = { scope.launch { snackbar.showSnackbar("Course deleted") } },
+                                        onError = { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+                                    )
                                 }
                             )
                         }
@@ -311,16 +280,16 @@ fun InstructorCoursesScreen(categories: List<CategoryResponseDTO>) {
             categories = categories,
             onDismiss  = { showDialog = false },
             onSave     = { dto ->
-                scope.launch {
-                    try {
-                        if (editCourse != null)
-                            NetworkClient.apiService.updateMyCourse(editCourse!!.courseId, dto)
-                        else
-                            NetworkClient.apiService.createMyCourse(dto)
-                        snackbar.showSnackbar("Course saved!")
-                        load()
-                    } catch (_: Exception) { snackbar.showSnackbar("Failed to save") }
-                    showDialog = false
+                if (editCourse != null) {
+                    viewModel.updateCourse(editCourse!!.courseId, dto,
+                        onSuccess = { scope.launch { snackbar.showSnackbar("Course updated") }; showDialog = false },
+                        onError = { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+                    )
+                } else {
+                    viewModel.createCourse(dto,
+                        onSuccess = { scope.launch { snackbar.showSnackbar("Course created") }; showDialog = false },
+                        onError = { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+                    )
                 }
             }
         )
@@ -485,10 +454,14 @@ fun CourseFormDialog(
 // ── Curriculum Management ───────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InstructorCurriculumManager(course: CourseResponseDTO, onBack: () -> Unit) {
+fun InstructorCurriculumManager(
+    course: CourseResponseDTO, 
+    viewModel: CourseManagementViewModel,
+    onBack: () -> Unit
+) {
     val scope = rememberCoroutineScope()
-    var courseDetail by remember { mutableStateOf<CourseDetailDTO?>(null) }
-    var loading by remember { mutableStateOf(true) }
+    val courseDetail = viewModel.courseDetail
+    val loading = viewModel.isLoading
     val snackbar = remember { SnackbarHostState() }
 
     // Dialog states
@@ -501,23 +474,16 @@ fun InstructorCurriculumManager(course: CourseResponseDTO, onBack: () -> Unit) {
     // Navigation states
     var managingQuizLesson by remember { mutableStateOf<LessonDetailDTO?>(null) }
 
-    fun load() {
-        scope.launch {
-            loading = true
-            try {
-                val res = NetworkClient.apiService.getCourseDetail(course.courseId)
-                if (res.isSuccessful) courseDetail = res.body()
-            } catch (_: Exception) {}
-            loading = false
-        }
-    }
-    LaunchedEffect(course.courseId) { load() }
+    LaunchedEffect(course.courseId) { viewModel.loadCourseDetail(course.courseId) }
 
     if (managingQuizLesson != null) {
         InstructorQuizManager(
             lessonId = managingQuizLesson!!.lessonId,
             lessonTitle = managingQuizLesson!!.title,
-            onBack = { managingQuizLesson = null; load() }
+            onBack = { 
+                managingQuizLesson = null
+                viewModel.loadCourseDetail(course.courseId)
+            }
         )
     } else {
         Scaffold(
@@ -546,14 +512,7 @@ fun InstructorCurriculumManager(course: CourseResponseDTO, onBack: () -> Unit) {
                                 section = section,
                                 onEdit = { editSection = section; showSectionDialog = true },
                                 onAddLesson = { targetSectionId = section.sectionId; editLesson = null; showLessonDialog = true },
-                                onDelete = {
-                                    scope.launch {
-                                        try {
-                                            NetworkClient.apiService.deleteMySection(section.sectionId)
-                                            load()
-                                        } catch (_: Exception) { snackbar.showSnackbar("Failed to delete section") }
-                                    }
-                                }
+                                onDelete = { viewModel.deleteSection(section.sectionId, course.courseId) }
                             )
                         }
                         items(section.lessons) { lesson ->
@@ -565,14 +524,7 @@ fun InstructorCurriculumManager(course: CourseResponseDTO, onBack: () -> Unit) {
                                     showLessonDialog = true 
                                 },
                                 onManageQuiz = { managingQuizLesson = lesson },
-                                onDelete = {
-                                    scope.launch {
-                                        try {
-                                            NetworkClient.apiService.deleteMyLesson(lesson.lessonId)
-                                            load()
-                                        } catch (_: Exception) { snackbar.showSnackbar("Failed to delete lesson") }
-                                    }
-                                }
+                                onDelete = { viewModel.deleteLesson(lesson.lessonId, course.courseId) }
                             )
                         }
                     }
@@ -590,14 +542,9 @@ fun InstructorCurriculumManager(course: CourseResponseDTO, onBack: () -> Unit) {
                 courseId = course.courseId,
                 onDismiss = { showSectionDialog = false },
                 onSave = { dto ->
-                    scope.launch {
-                        try {
-                            if (editSection != null) NetworkClient.apiService.updateMySection(editSection!!.sectionId, dto)
-                            else NetworkClient.apiService.createMySection(dto)
-                            load()
-                        } catch (_: Exception) {}
-                        showSectionDialog = false
-                    }
+                    if (editSection != null) viewModel.updateSection(editSection!!.sectionId, dto, course.courseId)
+                    else viewModel.createSection(dto, course.courseId)
+                    showSectionDialog = false
                 }
             )
         }
@@ -608,14 +555,9 @@ fun InstructorCurriculumManager(course: CourseResponseDTO, onBack: () -> Unit) {
                 sectionId = targetSectionId!!,
                 onDismiss = { showLessonDialog = false },
                 onSave = { dto ->
-                    scope.launch {
-                        try {
-                            if (editLesson != null) NetworkClient.apiService.updateMyLesson(editLesson!!.lessonId, dto)
-                            else NetworkClient.apiService.createMyLesson(dto)
-                            load()
-                        } catch (_: Exception) {}
-                        showLessonDialog = false
-                    }
+                    if (editLesson != null) viewModel.updateLesson(editLesson!!.lessonId, dto, course.courseId)
+                    else viewModel.createLesson(dto, course.courseId)
+                    showLessonDialog = false
                 }
             )
         }
@@ -643,10 +585,16 @@ fun CurriculumLessonItem(lesson: LessonDetailDTO, onEdit: () -> Unit, onDelete: 
         colors = CardDefaults.cardColors(containerColor = Color.White),
         border = BorderStroke(1.dp, LmsColors.Indigo50)) {
         Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(if (lesson.videoDir != null) Icons.Default.PlayCircle else Icons.AutoMirrored.Filled.Article, 
-                null, tint = if (lesson.videoDir != null) LmsColors.Teal500 else LmsColors.Indigo600)
+            Icon(if (!lesson.videoDir.isNullOrBlank()) Icons.Default.PlayCircle else Icons.AutoMirrored.Filled.Article, 
+                null, tint = if (!lesson.videoDir.isNullOrBlank()) LmsColors.Teal500 else LmsColors.Indigo600)
             Spacer(Modifier.width(12.dp))
-            Text(lesson.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(lesson.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                if (!lesson.videoDir.isNullOrBlank()) {
+                    Text(lesson.videoDir.substringAfterLast("/"), 
+                        style = MaterialTheme.typography.labelSmall, color = LmsColors.Subtitle)
+                }
+            }
             IconButton(onClick = onManageQuiz) { Icon(Icons.Default.Quiz, null, tint = LmsColors.Amber500, modifier = Modifier.size(20.dp)) }
             IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, null, tint = LmsColors.Indigo600, modifier = Modifier.size(20.dp)) }
             IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, null, tint = LmsColors.Error, modifier = Modifier.size(20.dp)) }
@@ -775,34 +723,26 @@ fun InstructorProfileScreen(onLogout: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InstructorQuizManager(lessonId: Long, lessonTitle: String, onBack: () -> Unit) {
+    val viewModel: QuizViewModel = viewModel()
     val scope = rememberCoroutineScope()
-    var lessonDetail by remember { mutableStateOf<LessonQuizDTO?>(null) }
-    var loading by remember { mutableStateOf(true) }
+    val lessonDetail = viewModel.lessonDetail
+    val loading = viewModel.isLoading
+    
     var showQuizDialog by remember { mutableStateOf(false) }
     var editQuiz by remember { mutableStateOf<QuizDetailDTO?>(null) }
     var managingQuestionQuiz by remember { mutableStateOf<QuizDetailDTO?>(null) }
     val snackbar = remember { SnackbarHostState() }
 
-    fun load() {
-        scope.launch {
-            loading = true
-            try {
-                val res = NetworkClient.apiService.getLesson(lessonId)
-                if (res.isSuccessful) lessonDetail = res.body()
-            } catch (_: Exception) {}
-            loading = false
-        }
-    }
-
-    LaunchedEffect(lessonId) { load() }
+    LaunchedEffect(lessonId) { viewModel.loadQuizzes(lessonId) }
 
     if (managingQuestionQuiz != null) {
         InstructorQuestionManager(
             quizId = managingQuestionQuiz!!.quizId,
             quizTitle = managingQuestionQuiz!!.title,
+            quizViewModel = viewModel,
             onBack = { 
                 managingQuestionQuiz = null
-                load()
+                viewModel.loadQuizzes(lessonId)
             }
         )
     } else {
@@ -831,15 +771,7 @@ fun InstructorQuizManager(lessonId: Long, lessonTitle: String, onBack: () -> Uni
                                 quiz = quiz,
                                 onEdit = { editQuiz = quiz; showQuizDialog = true },
                                 onManageQuestions = { managingQuestionQuiz = quiz },
-                                onDelete = {
-                                    scope.launch {
-                                        try {
-                                            NetworkClient.apiService.deleteQuiz(quiz.quizId)
-                                            snackbar.showSnackbar("Quiz deleted")
-                                            load()
-                                        } catch (_: Exception) { snackbar.showSnackbar("Failed to delete") }
-                                    }
-                                }
+                                onDelete = { viewModel.deleteQuiz(quiz.quizId, lessonId) }
                             )
                         }
                         if (lessonDetail?.quizz?.isEmpty() == true) {
@@ -856,17 +788,9 @@ fun InstructorQuizManager(lessonId: Long, lessonTitle: String, onBack: () -> Uni
                 lessonId = lessonId,
                 onDismiss = { showQuizDialog = false },
                 onSave = { dto ->
-                    scope.launch {
-                        try {
-                            if (editQuiz != null)
-                                NetworkClient.apiService.updateQuiz(editQuiz!!.quizId, dto)
-                            else
-                                NetworkClient.apiService.createQuiz(dto)
-                            snackbar.showSnackbar("Quiz saved!")
-                            load()
-                        } catch (_: Exception) { snackbar.showSnackbar("Failed to save") }
-                        showQuizDialog = false
-                    }
+                    if (editQuiz != null) viewModel.updateQuiz(editQuiz!!.quizId, dto, lessonId)
+                    else viewModel.createQuiz(dto, lessonId)
+                    showQuizDialog = false
                 }
             )
         }
@@ -933,56 +857,31 @@ fun QuizFormDialog(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InstructorQuestionManager(quizId: Long, quizTitle: String, onBack: () -> Unit) {
+fun InstructorQuestionManager(
+    quizId: Long, 
+    quizTitle: String, 
+    quizViewModel: QuizViewModel,
+    onBack: () -> Unit
+) {
     val scope = rememberCoroutineScope()
-    var questions by remember { mutableStateOf<List<QuestionDetailDTO>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+    val questions = quizViewModel.questions
+    val loading = quizViewModel.isLoading
+    
     var showQuestionDialog by remember { mutableStateOf(false) }
     var editQuestion by remember { mutableStateOf<QuestionDetailDTO?>(null) }
     var managingAnswerQuestion by remember { mutableStateOf<QuestionDetailDTO?>(null) }
     val snackbar = remember { SnackbarHostState() }
 
-    fun load() {
-        scope.launch {
-            loading = true
-            try {
-                // To get QuestionDetailDTO (which includes answers), we fetch both and join
-                val qRes = NetworkClient.apiService.getQuestions()
-                val aRes = NetworkClient.apiService.getAnswers()
-                if (qRes.isSuccessful && aRes.isSuccessful) {
-                    val allAnswers = aRes.body() ?: emptyList()
-                    questions = qRes.body()?.filter { it.quizId == quizId }?.map { q ->
-                        QuestionDetailDTO(
-                            questionId = q.questionId,
-                            questionText = q.questionText,
-                            point = 0,
-                            answers = allAnswers.filter { it.questionId == q.questionId }.map {
-                                AnswerDetailDTO(it.answerId, it.answerText, it.isCorrect)
-                            }
-                        )
-                    } ?: emptyList()
-                }
-            } catch (_: Exception) {}
-            loading = false
-        }
-    }
-
-    // Since we don't have a direct "get quiz detail" endpoint that returns questions,
-    // and we want to keep it simple, let's just use the questions we have or fetch them.
-    // For now, let's assume we can't easily refresh the whole list with answers 
-    // without the Lesson context. 
-    
-    // HOWEVER, we can still show and edit them.
-    
-    LaunchedEffect(quizId) { load() }
+    LaunchedEffect(quizId) { quizViewModel.loadQuestions(quizId) }
 
     if (managingAnswerQuestion != null) {
         InstructorAnswerManager(
             questionId = managingAnswerQuestion!!.questionId,
             questionText = managingAnswerQuestion!!.questionText,
+            quizViewModel = quizViewModel,
             onBack = { 
                 managingAnswerQuestion = null
-                load() // Refresh after managing answers
+                quizViewModel.loadQuestions(quizId)
             }
         )
     } else {
@@ -1011,15 +910,7 @@ fun InstructorQuestionManager(quizId: Long, quizTitle: String, onBack: () -> Uni
                                 question = question,
                                 onEdit = { editQuestion = question; showQuestionDialog = true },
                                 onManageAnswers = { managingAnswerQuestion = question },
-                                onDelete = {
-                                    scope.launch {
-                                        try {
-                                            NetworkClient.apiService.deleteQuestion(question.questionId)
-                                            snackbar.showSnackbar("Question deleted")
-                                            load()
-                                        } catch (_: Exception) { snackbar.showSnackbar("Failed to delete") }
-                                    }
-                                }
+                                onDelete = { quizViewModel.deleteQuestion(question.questionId, quizId) }
                             )
                         }
                         if (questions.isEmpty()) {
@@ -1036,18 +927,9 @@ fun InstructorQuestionManager(quizId: Long, quizTitle: String, onBack: () -> Uni
                 quizId = quizId,
                 onDismiss = { showQuestionDialog = false },
                 onSave = { dto ->
-                    scope.launch {
-                        try {
-                            if (editQuestion != null) {
-                                NetworkClient.apiService.updateQuestion(editQuestion!!.questionId, dto)
-                            } else {
-                                NetworkClient.apiService.createQuestion(dto)
-                            }
-                            snackbar.showSnackbar("Question saved!")
-                            load()
-                        } catch (_: Exception) { snackbar.showSnackbar("Failed to save") }
-                        showQuestionDialog = false
-                    }
+                    if (editQuestion != null) quizViewModel.updateQuestion(editQuestion!!.questionId, dto, quizId)
+                    else quizViewModel.createQuestion(dto, quizId)
+                    showQuestionDialog = false
                 }
             )
         }
@@ -1130,31 +1012,21 @@ fun QuestionFormDialog(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InstructorAnswerManager(questionId: Long, questionText: String, onBack: () -> Unit) {
+fun InstructorAnswerManager(
+    questionId: Long, 
+    questionText: String, 
+    quizViewModel: QuizViewModel,
+    onBack: () -> Unit
+) {
     val scope = rememberCoroutineScope()
-    var answers by remember { mutableStateOf<List<AnswerDetailDTO>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+    val answers = quizViewModel.answers
+    val loading = quizViewModel.isLoading
+    
     var showAnswerDialog by remember { mutableStateOf(false) }
     var editAnswer by remember { mutableStateOf<AnswerDetailDTO?>(null) }
     val snackbar = remember { SnackbarHostState() }
 
-    fun load() {
-        scope.launch {
-            loading = true
-            try {
-                // Fetch all answers and filter by questionId
-                val res = NetworkClient.apiService.getAnswers()
-                if (res.isSuccessful) {
-                    answers = res.body()?.filter { it.questionId == questionId }?.map {
-                        AnswerDetailDTO(it.answerId, it.answerText, it.isCorrect)
-                    } ?: emptyList()
-                }
-            } catch (_: Exception) {}
-            loading = false
-        }
-    }
-
-    LaunchedEffect(questionId) { load() }
+    LaunchedEffect(questionId) { quizViewModel.loadAnswers(questionId) }
 
     Scaffold(
         topBar = {
@@ -1180,15 +1052,7 @@ fun InstructorAnswerManager(questionId: Long, questionText: String, onBack: () -
                         AnswerItem(
                             answer = answer,
                             onEdit = { editAnswer = answer; showAnswerDialog = true },
-                            onDelete = {
-                                scope.launch {
-                                    try {
-                                        NetworkClient.apiService.deleteAnswer(answer.answerId)
-                                        snackbar.showSnackbar("Answer deleted")
-                                        load()
-                                    } catch (_: Exception) { snackbar.showSnackbar("Failed to delete") }
-                                }
-                            }
+                            onDelete = { quizViewModel.deleteAnswer(answer.answerId, questionId) }
                         )
                     }
                     if (answers.isEmpty()) {
@@ -1205,18 +1069,9 @@ fun InstructorAnswerManager(questionId: Long, questionText: String, onBack: () -
             questionId = questionId,
             onDismiss = { showAnswerDialog = false },
             onSave = { dto ->
-                scope.launch {
-                    try {
-                        if (editAnswer != null) {
-                            NetworkClient.apiService.updateAnswer(editAnswer!!.answerId, dto)
-                        } else {
-                            NetworkClient.apiService.createAnswer(dto)
-                        }
-                        snackbar.showSnackbar("Answer saved!")
-                        load()
-                    } catch (_: Exception) { snackbar.showSnackbar("Failed to save") }
-                    showAnswerDialog = false
-                }
+                if (editAnswer != null) quizViewModel.updateAnswer(editAnswer!!.answerId, dto, questionId)
+                else quizViewModel.createAnswer(dto, questionId)
+                showAnswerDialog = false
             }
         )
     }

@@ -30,27 +30,17 @@ import com.lms.lms.data.model.*
 import com.lms.lms.ui.shared.*
 import kotlinx.coroutines.launch
 
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.lms.lms.ui.viewmodel.StudentViewModel
+
 // ── Student Bottom Nav ─────────────────────────────────────────────────────────
 enum class StudentTab { HOME, BROWSE, MY_LEARNING, PROFILE }
 
 @Composable
-fun StudentApp(onLogout: () -> Unit) {
+fun StudentApp(onLogout: () -> Unit, viewModel: StudentViewModel = viewModel()) {
     var currentTab by remember { mutableStateOf(StudentTab.HOME) }
     var selectedCourseId by remember { mutableStateOf<Long?>(null) }
     var selectedCategoryId by remember { mutableStateOf<Long?>(null) }
-
-    // Navigation Stack Logic
-    // If selectedCourseId is set, show Detail Screen
-    // If selectedCategoryId is set, show Category Screen (only if in Home tab)
-    // Otherwise show the tab content
-
-    BackHandler(enabled = selectedCourseId != null || selectedCategoryId != null) {
-        if (selectedCourseId != null) {
-            selectedCourseId = null
-        } else if (selectedCategoryId != null) {
-            selectedCategoryId = null
-        }
-    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
@@ -86,13 +76,14 @@ fun StudentApp(onLogout: () -> Unit) {
                 when (currentTab) {
                     StudentTab.HOME -> {
                         StudentHomeScreen(
+                            viewModel = viewModel,
                             onCourseClick = { selectedCourseId = it },
                             onCategoryClick = { selectedCategoryId = it }
                         )
                     }
-                    StudentTab.BROWSE -> BrowseCoursesScreen(onCourseClick = { selectedCourseId = it })
-                    StudentTab.MY_LEARNING -> MyLearningScreen(onCourseClick = { selectedCourseId = it })
-                    StudentTab.PROFILE -> StudentProfileScreen(onLogout = onLogout)
+                    StudentTab.BROWSE -> BrowseCoursesScreen(viewModel = viewModel, onCourseClick = { selectedCourseId = it })
+                    StudentTab.MY_LEARNING -> MyLearningScreen(viewModel = viewModel, onCourseClick = { selectedCourseId = it })
+                    StudentTab.PROFILE -> StudentProfileScreen(viewModel = viewModel, onLogout = onLogout)
                 }
             }
         }
@@ -106,6 +97,7 @@ fun StudentApp(onLogout: () -> Unit) {
             selectedCategoryId?.let { catId ->
                 CategoryCoursesScreen(
                     categoryId = catId,
+                    viewModel = viewModel,
                     onBack = { selectedCategoryId = null },
                     onCourseClick = { selectedCourseId = it }
                 )
@@ -120,6 +112,7 @@ fun StudentApp(onLogout: () -> Unit) {
             selectedCourseId?.let { courseId ->
                 CourseDetailScreen(
                     courseId = courseId,
+                    viewModel = viewModel,
                     onBack = { selectedCourseId = null }
                 )
             }
@@ -249,24 +242,15 @@ fun QuizTakingScreen(quiz: QuizDetailDTO, onDismiss: () -> Unit) {
 // ── Home Screen ───────────────────────────────────────────────────────────────
 @Composable
 fun StudentHomeScreen(
+    viewModel: StudentViewModel,
     onCourseClick: (Long) -> Unit,
     onCategoryClick: (Long) -> Unit
 ) {
-    var courses       by remember { mutableStateOf<List<CourseResponseDTO>>(emptyList()) }
-    var categories    by remember { mutableStateOf<List<CategoryResponseDTO>>(emptyList()) }
-    var loading       by remember { mutableStateOf(true) }
-
     LaunchedEffect(Unit) {
-        try {
-            val cr = NetworkClient.apiService.getAllCourses()
-            val ca = NetworkClient.apiService.getAllCategories()
-            if (cr.isSuccessful) courses = cr.body() ?: emptyList()
-            if (ca.isSuccessful) categories = ca.body() ?: emptyList()
-        } catch (_: Exception) {}
-        loading = false
+        viewModel.loadHomeData()
     }
 
-    if (loading) { LoadingIndicator(); return }
+    if (viewModel.isLoadingHome) { LoadingIndicator(); return }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(Color.White),
@@ -332,7 +316,7 @@ fun StudentHomeScreen(
                     contentPadding = PaddingValues(horizontal = 20.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(categories) { cat ->
+                    items(viewModel.categories) { cat ->
                         Surface(
                             modifier = Modifier
                                 .size(100.dp)
@@ -389,7 +373,7 @@ fun StudentHomeScreen(
             }
         }
 
-        items(courses.take(5)) { course ->
+        items(viewModel.courses.take(5)) { course ->
             StudentCourseCard(
                 course = course,
                 onClick = { onCourseClick(course.courseId) }
@@ -459,25 +443,19 @@ fun StudentCourseCard(course: CourseResponseDTO, onClick: () -> Unit) {
 @Composable
 fun CategoryCoursesScreen(
     categoryId: Long,
+    viewModel: StudentViewModel,
     onBack: () -> Unit,
     onCourseClick: (Long) -> Unit
 ) {
-    var categoryDetail by remember { mutableStateOf<CategoryDetailDTO?>(null) }
-    var loading by remember { mutableStateOf(true) }
-
     LaunchedEffect(categoryId) {
-        try {
-            val res = NetworkClient.apiService.getCategory(categoryId)
-            if (res.isSuccessful) categoryDetail = res.body()
-        } catch (_: Exception) {}
-        loading = false
+        viewModel.loadCategoryDetail(categoryId)
     }
 
     Scaffold(
         containerColor = Color.White,
         topBar = {
             TopAppBar(
-                title = { Text(categoryDetail?.category ?: "Category", color = LmsColors.Indigo900) },
+                title = { Text(viewModel.categoryDetail?.category ?: "Category", color = LmsColors.Indigo900) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, null, tint = LmsColors.Indigo900)
@@ -487,14 +465,14 @@ fun CategoryCoursesScreen(
             )
         }
     ) { padding ->
-        if (loading) {
+        if (viewModel.isLoadingCategory) {
             LoadingIndicator(Modifier.padding(padding))
         } else {
             LazyColumn(
                 modifier = Modifier.padding(padding),
                 contentPadding = PaddingValues(bottom = 20.dp)
             ) {
-                categoryDetail?.courses?.let { courses ->
+                viewModel.categoryDetail?.courses?.let { courses ->
                     items(courses) { course ->
                         Card(
                             modifier = Modifier
@@ -533,21 +511,15 @@ fun CategoryCoursesScreen(
 
 // ── Browse Screen ─────────────────────────────────────────────────────────────
 @Composable
-fun BrowseCoursesScreen(onCourseClick: (Long) -> Unit) {
-    var courses by remember { mutableStateOf<List<CourseResponseDTO>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+fun BrowseCoursesScreen(viewModel: StudentViewModel, onCourseClick: (Long) -> Unit) {
     var search  by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
-        try {
-            val res = NetworkClient.apiService.getAllCourses()
-            if (res.isSuccessful) courses = res.body() ?: emptyList()
-        } catch (_: Exception) {}
-        loading = false
+        viewModel.loadHomeData()
     }
 
-    val filtered = if (search.isBlank()) courses
-    else courses.filter {
+    val filtered = if (search.isBlank()) viewModel.courses
+    else viewModel.courses.filter {
         it.title.contains(search, ignoreCase = true) ||
         it.instructor?.contains(search, ignoreCase = true) == true ||
         it.categories.any { cat -> cat.contains(search, ignoreCase = true) }
@@ -572,7 +544,7 @@ fun BrowseCoursesScreen(onCourseClick: (Long) -> Unit) {
                     color = LmsColors.Indigo900
                 )
                 Text(
-                    text = "${courses.size} courses available",
+                    text = "${viewModel.courses.size} courses available",
                     style = MaterialTheme.typography.bodyMedium,
                     color = LmsColors.Indigo900.copy(alpha = 0.7f)
                 )
@@ -599,7 +571,7 @@ fun BrowseCoursesScreen(onCourseClick: (Long) -> Unit) {
             )
         )
         Spacer(Modifier.height(16.dp))
-        if (loading) { LoadingIndicator() } else {
+        if (viewModel.isLoadingHome) { LoadingIndicator() } else {
             LazyColumn(
                 contentPadding = PaddingValues(bottom = 20.dp)
             ) {
@@ -631,12 +603,8 @@ fun BrowseCoursesScreen(onCourseClick: (Long) -> Unit) {
 // ── Course Detail Screen ───────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CourseDetailScreen(courseId: Long, onBack: () -> Unit) {
+fun CourseDetailScreen(courseId: Long, viewModel: StudentViewModel, onBack: () -> Unit) {
     val scope   = rememberCoroutineScope()
-    var course        by remember { mutableStateOf<CourseDetailDTO?>(null) }
-    var myEnrollments by remember { mutableStateOf<List<EnrollmentResponseDTO>>(emptyList()) }
-    var loading       by remember { mutableStateOf(true) }
-    var enrolling     by remember { mutableStateOf(false) }
     var showReviewDialog by remember { mutableStateOf(false) }
     var rating        by remember { mutableStateOf(5) }
     var reviewText    by remember { mutableStateOf("") }
@@ -645,16 +613,10 @@ fun CourseDetailScreen(courseId: Long, onBack: () -> Unit) {
     val snackbar      = remember { SnackbarHostState() }
 
     LaunchedEffect(courseId) {
-        try {
-            val cr = NetworkClient.apiService.getCourseDetail(courseId)
-            val me = NetworkClient.apiService.getMyEnrollments()
-            if (cr.isSuccessful) course        = cr.body()
-            if (me.isSuccessful) myEnrollments = me.body() ?: emptyList()
-        } catch (_: Exception) {}
-        loading = false
+        viewModel.loadCourseDetail(courseId)
     }
 
-    val isEnrolled = myEnrollments.any { it.courseId == courseId }
+    val isEnrolled = viewModel.enrollments.any { it.courseId == courseId }
 
     if (isViewingVideo && activeLesson != null && !activeLesson?.videoDir.isNullOrBlank()) {
         Dialog(
@@ -701,7 +663,7 @@ fun CourseDetailScreen(courseId: Long, onBack: () -> Unit) {
         },
         bottomBar = {
             if (!isEnrolled && !isViewingVideo) {
-                course?.let { c ->
+                viewModel.courseDetail?.let { c ->
                     Surface(color = Color.White, border = BorderStroke(1.dp, LmsColors.Indigo900.copy(0.1f))) {
                         Row(modifier = Modifier.fillMaxWidth().padding(16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -714,46 +676,12 @@ fun CourseDetailScreen(courseId: Long, onBack: () -> Unit) {
                             PrimaryButton(
                                 text = if ((c.price ?: 0.0) > 0.0) "Buy Now" else "Enroll Now",
                                 onClick = {
-                                    scope.launch {
-                                        enrolling = true
-                                        try {
-                                            if ((c.price ?: 0.0) > 0.0) {
-                                                // 1. Create Checkout
-                                                val res = NetworkClient.apiService.createCheckout(
-                                                    PaymentCheckoutRequestDTO(courseId = courseId, provider = "STRIPE")
-                                                )
-                                                if (res.isSuccessful) {
-                                                    val payment = res.body()
-                                                    if (payment != null) {
-                                                        // 2. Immediately Confirm Payment (Set to PAID)
-                                                        NetworkClient.apiService.confirmPayment(payment.paymentId)
-                                                        snackbar.showSnackbar("Course purchased successfully!")
-                                                        
-                                                        // Refresh state
-                                                        val me = NetworkClient.apiService.getMyEnrollments()
-                                                        if (me.isSuccessful) myEnrollments = me.body() ?: emptyList()
-                                                    }
-                                                } else {
-                                                    snackbar.showSnackbar("Purchase failed: ${res.code()}")
-                                                }
-                                            } else {
-                                                // Free course - just enroll
-                                                val res = NetworkClient.apiService.enroll(EnrollmentCreateDTO(courseId))
-                                                if (res.isSuccessful) {
-                                                    myEnrollments = myEnrollments + res.body()!!
-                                                    snackbar.showSnackbar("Successfully enrolled!")
-                                                } else {
-                                                    snackbar.showSnackbar("Enrollment failed: ${res.code()}")
-                                                }
-                                            }
-                                        } catch (e: Exception) {
-                                            snackbar.showSnackbar("Error: ${e.message}")
-                                        }
-                                        enrolling = false
+                                    viewModel.enrollInCourse(courseId, (c.price ?: 0.0) > 0.0) { msg ->
+                                        scope.launch { snackbar.showSnackbar(msg) }
                                     }
                                 },
                                 modifier = Modifier.weight(1.5f),
-                                loading = enrolling
+                                loading = viewModel.isEnrolling
                             )
                         }
                     }
@@ -762,8 +690,8 @@ fun CourseDetailScreen(courseId: Long, onBack: () -> Unit) {
         },
         snackbarHost = { LmsSnackbarHost(snackbar) }
     ) { padding ->
-        if (loading) { LoadingIndicator(Modifier.padding(padding)); return@Scaffold }
-        course?.let { c ->
+        if (viewModel.isLoadingDetail) { LoadingIndicator(Modifier.padding(padding)); return@Scaffold }
+        viewModel.courseDetail?.let { c ->
             LazyColumn(modifier = Modifier.fillMaxSize().padding(bottom = if (isViewingVideo) 0.dp else padding.calculateBottomPadding())) {
                 // Header Image or Video Preview
                 item {
@@ -890,10 +818,7 @@ fun CourseDetailScreen(courseId: Long, onBack: () -> Unit) {
                                     section.lessons.forEach { lesson ->
                                         var lessonQuizzes by remember { mutableStateOf<List<QuizDetailDTO>>(emptyList()) }
                                         LaunchedEffect(lesson.lessonId) {
-                                            try {
-                                                val res = NetworkClient.apiService.getLesson(lesson.lessonId)
-                                                if (res.isSuccessful) lessonQuizzes = res.body()?.quizz ?: emptyList()
-                                            } catch (_: Exception) {}
+                                            lessonQuizzes = viewModel.loadLessonQuizzes(lesson.lessonId)
                                         }
 
                                         Column {
@@ -983,19 +908,10 @@ fun CourseDetailScreen(courseId: Long, onBack: () -> Unit) {
             },
             confirmButton = {
                 Button(onClick = {
-                    scope.launch {
-                        try {
-                            NetworkClient.apiService.addReview(
-                                courseId,
-                                CourseReviewCreateDTO(
-                                    reviewText = reviewText,   // ← reviewText NOT comment
-                                    rating = rating
-                                )
-                            )
-                            snackbar.showSnackbar("Review submitted!")
-                        } catch (_: Exception) {}
-                        showReviewDialog = false
+                    viewModel.submitReview(courseId, rating, reviewText) { msg ->
+                        scope.launch { snackbar.showSnackbar(msg) }
                     }
+                    showReviewDialog = false
                 }) { Text("Submit") }
             },
             dismissButton = { TextButton(onClick = { showReviewDialog = false }) { Text("Cancel") } }
@@ -1005,16 +921,9 @@ fun CourseDetailScreen(courseId: Long, onBack: () -> Unit) {
 
 // ── My Learning ───────────────────────────────────────────────────────────────
 @Composable
-fun MyLearningScreen(onCourseClick: (Long) -> Unit) {
-    var enrollments by remember { mutableStateOf<List<EnrollmentResponseDTO>>(emptyList()) }
-    var loading     by remember { mutableStateOf(true) }
-
+fun MyLearningScreen(viewModel: StudentViewModel, onCourseClick: (Long) -> Unit) {
     LaunchedEffect(Unit) {
-        try {
-            val res = NetworkClient.apiService.getMyEnrollments()
-            if (res.isSuccessful) enrollments = res.body() ?: emptyList()
-        } catch (_: Exception) {}
-        loading = false
+        viewModel.loadLearningData()
     }
 
     Column(modifier = Modifier.fillMaxSize().background(Color.White)) {
@@ -1036,15 +945,15 @@ fun MyLearningScreen(onCourseClick: (Long) -> Unit) {
                     color = LmsColors.Indigo900
                 )
                 Text(
-                    text = "${enrollments.size} enrolled courses",
+                    text = "${viewModel.enrollments.size} enrolled courses",
                     style = MaterialTheme.typography.bodyMedium,
                     color = LmsColors.Indigo900.copy(alpha = 0.7f)
                 )
             }
         }
 
-        if (loading) { LoadingIndicator() } else {
-            if (enrollments.isEmpty()) {
+        if (viewModel.isLoadingLearning) { LoadingIndicator() } else {
+            if (viewModel.enrollments.isEmpty()) {
                 Column(
                     modifier = Modifier.fillMaxSize(),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -1056,7 +965,7 @@ fun MyLearningScreen(onCourseClick: (Long) -> Unit) {
                 }
             } else {
                 LazyColumn(contentPadding = PaddingValues(bottom = 20.dp)) {
-                    items(enrollments) { enrollment ->
+                    items(viewModel.enrollments) { enrollment ->
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1114,16 +1023,9 @@ fun MyLearningScreen(onCourseClick: (Long) -> Unit) {
 
 // ── Student Profile ────────────────────────────────────────────────────────────
 @Composable
-fun StudentProfileScreen(onLogout: () -> Unit) {
-    var payments by remember { mutableStateOf<List<PaymentResponseDTO>>(emptyList()) }
-    var loading  by remember { mutableStateOf(true) }
-
+fun StudentProfileScreen(viewModel: StudentViewModel, onLogout: () -> Unit) {
     LaunchedEffect(Unit) {
-        try {
-            val res = NetworkClient.apiService.getMyPayments()
-            if (res.isSuccessful) payments = res.body() ?: emptyList()
-        } catch (_: Exception) {}
-        loading = false
+        viewModel.loadProfileData()
     }
 
     val email   = NetworkClient.getEmail() ?: ""
@@ -1181,9 +1083,9 @@ fun StudentProfileScreen(onLogout: () -> Unit) {
             Spacer(Modifier.height(12.dp))
         }
 
-        if (loading) {
+        if (viewModel.isLoadingProfile) {
             item { LoadingIndicator() }
-        } else if (payments.isEmpty()) {
+        } else if (viewModel.payments.isEmpty()) {
             item {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
@@ -1194,7 +1096,7 @@ fun StudentProfileScreen(onLogout: () -> Unit) {
                 }
             }
         } else {
-            items(payments) { payment ->
+            items(viewModel.payments) { payment ->
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
                     shape = RoundedCornerShape(16.dp),

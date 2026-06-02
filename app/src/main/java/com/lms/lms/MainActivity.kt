@@ -9,6 +9,8 @@ import com.lms.lms.ui.auth.*
 import com.lms.lms.ui.instructor.InstructorApp
 import com.lms.lms.ui.shared.LmsTheme
 import com.lms.lms.ui.student.StudentApp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.lms.lms.ui.viewmodel.AuthViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,6 +36,8 @@ sealed class Screen {
 
 @Composable
 fun LmsNavHost() {
+    val authViewModel: AuthViewModel = viewModel()
+    
     // Check if already logged in
     val initialScreen = remember {
         if (NetworkClient.isLoggedIn()) {
@@ -55,30 +59,40 @@ fun LmsNavHost() {
                 }
             },
             onNavigateToRegister     = { current = Screen.Register },
-            onNavigateToForgotPassword = { current = Screen.ForgotPassword }
+            onNavigateToForgotPassword = { current = Screen.ForgotPassword },
+            viewModel = authViewModel
         )
 
         is Screen.Register -> RegisterScreen(
             onRegisterSuccess = { email -> current = Screen.OtpVerify(email) },
-            onNavigateToLogin = { current = Screen.Login }
+            onNavigateToLogin = { current = Screen.Login },
+            viewModel = authViewModel
         )
 
         is Screen.OtpVerify -> OtpVerificationScreen(
             email      = screen.email,
             onVerified = { current = Screen.Login },
-            onBack     = { current = Screen.Login }
+            onBack     = { current = Screen.Login },
+            viewModel = authViewModel
         )
 
         is Screen.ForgotPassword -> ForgotPasswordScreen(
-            onBack = { current = Screen.Login }
+            onBack = { current = Screen.Login },
+            viewModel = authViewModel
         )
 
         is Screen.StudentHome -> StudentApp(
-            onLogout = { current = Screen.Login }
+            onLogout = { 
+                NetworkClient.clearSession()
+                current = Screen.Login 
+            }
         )
 
         is Screen.InstructorHome -> InstructorApp(
-            onLogout = { current = Screen.Login }
+            onLogout = { 
+                NetworkClient.clearSession()
+                current = Screen.Login 
+            }
         )
     }
 }

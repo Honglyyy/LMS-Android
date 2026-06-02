@@ -13,7 +13,7 @@ object NetworkClient {
 
     // Change this to your backend URL
 //    private const val BASE_URL = "http://10.0.2.2:8080/"
-    private const val BASE_URL = "http://192.168.0.194:8080/"
+    private const val BASE_URL = "http://192.168.0.193:8080/"
     private const val PREF_NAME = "lms_prefs"
     private const val KEY_TOKEN = "jwt_token"
     private const val KEY_ROLE = "user_role"
